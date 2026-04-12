@@ -1,0 +1,58 @@
+[ Para
+    [ Str "Text"
+    , Space
+    , Str "with"
+    , Space
+    , Subscript [ Str "sub" ]
+    , Space
+    , Str "and"
+    , Space
+    , Superscript [ Str "sup" ]
+    , Space
+    , Str "and"
+    , Space
+    , Strikeout [ Str "strike" ]
+    , Space
+    , Str "and"
+    , Space
+    , SmallCaps [ Str "smallcaps" ]
+    , Str "."
+    ]
+, Para
+    [ Str "Math"
+    , Space
+    , Str "inline"
+    , Space
+    , Math InlineMath "x^2"
+    , Space
+    , Str "and"
+    , Space
+    , Str "display"
+    , Space
+    , Math DisplayMath "\\sum_i x_i"
+    , Str "."
+    ]
+, Para
+    [ Quoted DoubleQuote [ Str "quoted" ]
+    , Space
+    , Str "and"
+    , Space
+    , Quoted SingleQuote [ Str "single" ]
+    , Str "."
+    ]
+, Para
+    [ Str "A"
+    , Space
+    , Str "soft"
+    , SoftBreak
+    , Str "break"
+    , Space
+    , Str "and"
+    , Space
+    , Str "a"
+    , Space
+    , Str "hard"
+    , LineBreak
+    , Str "break."
+    ]
+]

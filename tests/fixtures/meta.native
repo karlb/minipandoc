@@ -1,0 +1,19 @@
+Pandoc
+  Meta
+    { unMeta =
+        fromList
+          [ ( "author"
+            , MetaList
+                [ MetaInlines [ Str "Alice" ]
+                , MetaInlines [ Str "Bob" ]
+                ]
+            )
+          , ( "date" , MetaInlines [ Str "2024-01-01" ] )
+          , ( "title"
+            , MetaInlines [ Str "A" , Space , Str "Document" ]
+            )
+          ]
+    }
+  [ Header 1 ( "heading" , [] , [] ) [ Str "Heading" ]
+  , Para [ Str "Body." ]
+  ]
