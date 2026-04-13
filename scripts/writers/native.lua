@@ -68,10 +68,14 @@ function write_inline(el)
     return "Math " .. el.mathtype .. " " .. esc_string(el.text)
   elseif tag == "RawInline" then
     return "RawInline (Format " .. esc_string(el.format) .. ") " .. esc_string(el.text)
-  elseif tag == "Link" or tag == "Image" then
-    return tag .. " " .. write_attr(el.attr) .. " "
+  elseif tag == "Link" then
+    return "Link " .. write_attr(el.attr) .. " "
       .. write_inlines(el.content) .. " "
       .. write_target(el.target, el.title)
+  elseif tag == "Image" then
+    return "Image " .. write_attr(el.attr) .. " "
+      .. write_inlines(el.caption) .. " "
+      .. write_target(el.src, el.title)
   elseif tag == "Note" then
     return "Note " .. write_blocks(el.content)
   elseif tag == "Span" then

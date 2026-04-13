@@ -1,0 +1,33 @@
+[ Div
+    ( "main" , [ "section" ] , [] )
+    [ Header
+        1
+        ( "" , [ "primary" , "huge" ] , [ ( "foo" , "bar" ) ] )
+        [ Str "Heading" ]
+    , Para
+        [ Str "A"
+        , Space
+        , Span ( "lnk" , [ "highlight" ] , [] ) [ Str "link" ]
+        , Space
+        , Str "and"
+        , Space
+        , Str "an"
+        , Space
+        , Str "!"
+        , Link ( "fig1" , [] , [] ) [ Str "image" ] ( "i.png" , "" )
+        , Str "."
+        ]
+    , Div
+        ( "n1" , [ "note" ] , [] )
+        [ Para
+            [ Str "Content"
+            , Space
+            , Str "in"
+            , Space
+            , Str "a"
+            , Space
+            , Str "div."
+            ]
+        ]
+    ]
+]

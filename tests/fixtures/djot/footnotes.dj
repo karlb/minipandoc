@@ -1,0 +1,6 @@
+A paragraph with a footnote.[^1]
+
+Another para.[^2]
+
+[^1]: Note one text.
+[^2]: Note two.

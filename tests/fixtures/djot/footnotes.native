@@ -1,0 +1,22 @@
+[ Para
+    [ Str "A"
+    , Space
+    , Str "paragraph"
+    , Space
+    , Str "with"
+    , Space
+    , Str "a"
+    , Space
+    , Str "footnote."
+    , Note
+        [ Para
+            [ Str "Note" , Space , Str "one" , Space , Str "text." ]
+        ]
+    ]
+, Para
+    [ Str "Another"
+    , Space
+    , Str "para."
+    , Note [ Para [ Str "Note" , Space , Str "two." ] ]
+    ]
+]

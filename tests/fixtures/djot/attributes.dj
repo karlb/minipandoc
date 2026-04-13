@@ -1,0 +1,9 @@
+{#main .primary .huge foo=bar}
+# Heading
+
+A [link]{#lnk .highlight} and an \![image](i.png){#fig1}.
+
+{.note #n1}
+::: 
+Content in a div.
+:::

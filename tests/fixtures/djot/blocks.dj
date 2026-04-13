@@ -1,0 +1,16 @@
+> A blockquote
+> with two lines.
+
+```python
+print("hi")
+```
+
+----
+
+::: note
+Content of a div.
+:::
+
+``` =html
+<b>raw</b>
+```

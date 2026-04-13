@@ -215,12 +215,16 @@ function parser_mt:parse_inline()
     local fmt = self:parse_format()
     local txt = self:expect("str").val
     return pandoc.RawInline(fmt, txt)
-  elseif tag == "Link" or tag == "Image" then
+  elseif tag == "Link" then
     local attr = self:parse_attr()
     local content = self:parse_inlines()
     local url, title = self:parse_target()
-    if tag == "Link" then return pandoc.Link(content, url, title, attr)
-    else return pandoc.Image(content, url, title, attr) end
+    return pandoc.Link(content, url, title, attr)
+  elseif tag == "Image" then
+    local attr = self:parse_attr()
+    local caption = self:parse_inlines()
+    local src, title = self:parse_target()
+    return pandoc.Image(caption, src, title, attr)
   elseif tag == "Note" then
     return pandoc.Note(self:parse_blocks())
   elseif tag == "Span" then

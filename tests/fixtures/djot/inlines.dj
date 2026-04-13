@@ -1,0 +1,12 @@
+Text with {=highlight=} and {+insert+} and {-delete-}.
+
+Super H^2^O and sub C~6~H~12~O~6~.
+
+"Quoted" and 'single'.
+
+Math $`x^2 + y^2`$ inline, and display $$`\sum_{i=1}^{n} i`.
+
+Verbatim `x + y = z` and raw `<b>x</b>`{=html}.
+
+A soft
+break.

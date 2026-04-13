@@ -1,0 +1,45 @@
+[ BulletList
+    [ [ Plain [ Str "one" ] ]
+    , [ Plain
+          [ Str "two"
+          , SoftBreak
+          , Str "-"
+          , Space
+          , Str "nested"
+          , Space
+          , Str "bullet"
+          ]
+      ]
+    , [ Plain [ Str "three" ] ]
+    ]
+, OrderedList
+    ( 1 , DefaultStyle , DefaultDelim )
+    [ [ Plain [ Str "a" ] ] , [ Plain [ Str "b" ] ] ]
+, OrderedList
+    ( 1 , LowerRoman , DefaultDelim )
+    [ [ Plain [ Str "roman-i" ] ]
+    , [ Plain [ Str "roman-ii" ] ]
+    ]
+, Para
+    [ Str "term"
+    , SoftBreak
+    , Str ":"
+    , Space
+    , Str "definition"
+    ]
+, Para
+    [ Str "another"
+    , SoftBreak
+    , Str ":"
+    , Space
+    , Str "def"
+    , Space
+    , Str "one"
+    , SoftBreak
+    , Str ":"
+    , Space
+    , Str "def"
+    , Space
+    , Str "two"
+    ]
+]

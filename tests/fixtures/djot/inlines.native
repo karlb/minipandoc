@@ -1,0 +1,73 @@
+[ Para
+    [ Str "Text"
+    , Space
+    , Str "with"
+    , Space
+    , Span ( "" , [ "mark" ] , [] ) [ Str "highlight" ]
+    , Space
+    , Str "and"
+    , Space
+    , Span ( "" , [ "insert" ] , [] ) [ Str "insert" ]
+    , Space
+    , Str "and"
+    , Space
+    , Strikeout [ Str "delete" ]
+    , Str "."
+    ]
+, Para
+    [ Str "Super"
+    , Space
+    , Str "H"
+    , Superscript [ Str "2" ]
+    , Str "O"
+    , Space
+    , Str "and"
+    , Space
+    , Str "sub"
+    , Space
+    , Str "C"
+    , Subscript [ Str "6" ]
+    , Str "H"
+    , Subscript [ Str "12" ]
+    , Str "O"
+    , Subscript [ Str "6" ]
+    , Str "."
+    ]
+, Para
+    [ Quoted DoubleQuote [ Str "Quoted" ]
+    , Space
+    , Str "and"
+    , Space
+    , Quoted SingleQuote [ Str "single" ]
+    , Str "."
+    ]
+, Para
+    [ Str "Math"
+    , Space
+    , Math InlineMath "x^2 + y^2"
+    , Str "$"
+    , Space
+    , Str "inline,"
+    , Space
+    , Str "and"
+    , Space
+    , Str "display"
+    , Space
+    , Math DisplayMath "\\sum_{i=1}^{n} i"
+    , Str "."
+    ]
+, Para
+    [ Str "Verbatim"
+    , Space
+    , Code ( "" , [] , [] ) "x + y = z"
+    , Space
+    , Str "and"
+    , Space
+    , Str "raw"
+    , Space
+    , RawInline (Format "html") "<b>x</b>"
+    , Str "."
+    ]
+, Para
+    [ Str "A" , Space , Str "soft" , SoftBreak , Str "break." ]
+]

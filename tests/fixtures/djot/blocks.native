@@ -1,0 +1,29 @@
+[ BlockQuote
+    [ Para
+        [ Str "A"
+        , Space
+        , Str "blockquote"
+        , SoftBreak
+        , Str "with"
+        , Space
+        , Str "two"
+        , Space
+        , Str "lines."
+        ]
+    ]
+, CodeBlock ( "" , [ "python" ] , [] ) "print(\"hi\")"
+, HorizontalRule
+, Div
+    ( "" , [ "note" ] , [] )
+    [ Para
+        [ Str "Content"
+        , Space
+        , Str "of"
+        , Space
+        , Str "a"
+        , Space
+        , Str "div."
+        ]
+    ]
+, RawBlock (Format "html") "<b>raw</b>\n"
+]

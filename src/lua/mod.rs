@@ -5,6 +5,7 @@ use crate::options::{ReaderOptions, WriterOptions};
 use crate::pipeline::Error;
 
 const PANDOC_MODULE_LUA: &str = include_str!("../../scripts/pandoc_module.lua");
+const LAYOUT_LUA: &str = include_str!("../../scripts/layout.lua");
 
 pub struct LuaEngine {
     pub lua: Lua,
@@ -129,6 +130,10 @@ fn to_lua_err(e: impl std::fmt::Display) -> mlua::Error {
 pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error> {
     let pandoc: Table = lua.load(PANDOC_MODULE_LUA).set_name("pandoc_module.lua").eval()?;
     lua.globals().set("pandoc", pandoc)?;
+    // Load pandoc.layout on top of the pandoc table.
+    let layout: Table = lua.load(LAYOUT_LUA).set_name("layout.lua").eval()?;
+    let pandoc_tbl: Table = lua.globals().get("pandoc")?;
+    pandoc_tbl.set("layout", layout)?;
     lua.globals().set("PANDOC_VERSION", crate::PANDOC_VERSION)?;
     lua.globals().set("PANDOC_READER_OPTIONS", lua.create_table()?)?;
     lua.globals().set("PANDOC_WRITER_OPTIONS", lua.create_table()?)?;

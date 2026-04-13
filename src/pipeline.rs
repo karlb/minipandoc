@@ -149,7 +149,11 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
         Error::Other(format!("writer {} defines no Writer function", to_base))
     })?;
     let wopts_t = lua.globals().get::<Value>("PANDOC_WRITER_OPTIONS")?;
-    let out: String = writer_fn.call((doc, wopts_t))?;
+    let mut out: String = writer_fn.call((doc, wopts_t))?;
+    // Mimic pandoc: terminate output with a single trailing newline.
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
 
     // Write output
     match &cfg.output_file {

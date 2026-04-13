@@ -144,11 +144,48 @@ function pandoc.Attr(identifier, classes, attributes)
   if type(identifier) == "table" and getmetatable(identifier) == Attr then
     return identifier
   end
+  -- Accept positional 3-tuple: {"id", [classes], [kvs]}
   if type(identifier) == "table" and identifier.tag == nil
       and classes == nil and attributes == nil
       and type(identifier[1]) == "string" then
     local t = identifier
     identifier, classes, attributes = t[1], t[2] or {}, t[3] or {}
+  end
+  -- Accept dict form: {identifier="id", classes={...}, attributes={...}}
+  -- Also handles djot-style extras: `class` (space-separated classes string),
+  -- `id` (alias for identifier).
+  if type(identifier) == "table" and classes == nil and attributes == nil then
+    local t = identifier
+    local id_val = t.identifier or t.id or ""
+    local class_list = {}
+    if type(t.classes) == "table" then
+      for _, c in ipairs(t.classes) do class_list[#class_list+1] = c end
+    end
+    if type(t.class) == "string" then
+      for c in t.class:gmatch("%S+") do class_list[#class_list+1] = c end
+    end
+    local attr_kvs = {}
+    if type(t.attributes) == "table" then
+      if #t.attributes > 0 and type(t.attributes[1]) == "table" then
+        for _, p in ipairs(t.attributes) do attr_kvs[#attr_kvs+1] = { p[1], p[2] } end
+      else
+        for k, v in pairs(t.attributes) do
+          if type(k) == "string" then attr_kvs[#attr_kvs+1] = { k, v } end
+        end
+      end
+    end
+    -- Treat any other string-keyed entries as attributes, excluding known keys.
+    for k, v in pairs(t) do
+      if type(k) == "string"
+          and k ~= "identifier" and k ~= "id"
+          and k ~= "classes" and k ~= "class"
+          and k ~= "attributes" and k ~= "tag" and k ~= "t" then
+        attr_kvs[#attr_kvs+1] = { k, tostring(v) }
+      end
+    end
+    identifier = id_val
+    classes = class_list
+    attributes = attr_kvs
   end
   identifier = identifier or ""
   classes = List.new(classes or {})
@@ -181,10 +218,29 @@ function pandoc.Attr(identifier, classes, attributes)
     end,
     __newindex = function(self, k, v)
       if type(k) == "number" then rawset(self, k, v); return end
-      for _, pair in ipairs(self) do
-        if pair[1] == k then pair[2] = v; return end
+      for i, pair in ipairs(self) do
+        if pair[1] == k then
+          if v == nil then
+            table.remove(self, i)
+          else
+            pair[2] = v
+          end
+          return
+        end
       end
-      rawset(self, #self + 1, { k, v })
+      if v ~= nil then
+        rawset(self, #self + 1, { k, v })
+      end
+    end,
+    __pairs = function(self)
+      -- Iterate as a map: key → value (string → string).
+      local i = 0
+      return function()
+        i = i + 1
+        local pair = rawget(self, i)
+        if pair == nil then return nil end
+        return pair[1], pair[2]
+      end
     end,
   })
   return setmetatable({
@@ -205,10 +261,11 @@ end
 -- ---------------------------------------------------------------------------
 
 local Element = {}
-Element.__index = Element
 Element.__name = "Element"
 
-function Element:clone()
+local Element_methods = {}
+
+function Element_methods:clone()
   local out = {}
   for k, v in pairs(self) do
     if type(v) == "table" and type(v.clone) == "function" then
@@ -220,12 +277,36 @@ function Element:clone()
   return setmetatable(out, getmetatable(self))
 end
 
-function Element:show()
+function Element_methods:show()
   return pandoc_native_show(self)
 end
 
-function Element:walk(filter)
+function Element_methods:walk(filter)
   return walk_element(self, filter)
+end
+
+-- Proxy identifier/classes/attributes access to el.attr, so djot-style
+-- `el.classes:includes(...)` and `el.attributes.key = ...` work on any
+-- Attr-bearing element.
+Element.__index = function(self, key)
+  local m = Element_methods[key]
+  if m ~= nil then return m end
+  local attr = rawget(self, "attr")
+  if attr then
+    if key == "identifier" or key == "classes" or key == "attributes" then
+      return attr[key]
+    end
+  end
+  return nil
+end
+
+Element.__newindex = function(self, key, value)
+  local attr = rawget(self, "attr")
+  if attr and (key == "identifier" or key == "classes" or key == "attributes") then
+    attr[key] = value
+    return
+  end
+  rawset(self, key, value)
 end
 
 local function make(tag, fields)
@@ -293,19 +374,23 @@ function pandoc.RawInline(format, text)
   return make("RawInline", { format = format or "", text = text or "" })
 end
 
-local function link_like(tag)
-  return function(content, target, title, attr)
-    title = title or ""
-    return make(tag, {
-      content = List.new(content or {}),
-      target = target or "",
-      title = title,
-      attr = to_attr(attr),
-    })
-  end
+function pandoc.Link(content, target, title, attr)
+  return make("Link", {
+    content = List.new(content or {}),
+    target = target or "",
+    title = title or "",
+    attr = to_attr(attr),
+  })
 end
-pandoc.Link = link_like("Link")
-pandoc.Image = link_like("Image")
+
+function pandoc.Image(caption, src, title, attr)
+  return make("Image", {
+    caption = List.new(caption or {}),
+    src = src or "",
+    title = title or "",
+    attr = to_attr(attr),
+  })
+end
 
 function pandoc.Note(content)
   return make("Note", { content = List.new(content or {}) })
@@ -502,6 +587,224 @@ function pandoc.MetaList(list) return List.new(list or {}) end
 function pandoc.MetaMap(tbl) return tbl or {} end
 
 -- ---------------------------------------------------------------------------
+-- Inlines / Blocks — tagged List variants
+-- ---------------------------------------------------------------------------
+
+local Inlines = setmetatable({}, { __index = List })
+Inlines.__index = Inlines
+Inlines.__name = "Inlines"
+
+local Blocks = setmetatable({}, { __index = List })
+Blocks.__index = Blocks
+Blocks.__name = "Blocks"
+
+function pandoc.Inlines(x)
+  if x == nil then return setmetatable({}, Inlines) end
+  if type(x) == "string" then
+    -- Tokenize: runs of non-whitespace → Str, runs of spaces → Space,
+    -- newlines → SoftBreak. Matches pandoc's own Inlines(string) behavior.
+    local out = {}
+    local i = 1
+    local n = #x
+    while i <= n do
+      local c = x:sub(i, i)
+      if c == "\n" then
+        out[#out+1] = pandoc.SoftBreak(); i = i + 1
+      elseif c == " " or c == "\t" then
+        -- collapse runs of spaces/tabs into single Space
+        out[#out+1] = pandoc.Space()
+        while i <= n and (x:sub(i,i) == " " or x:sub(i,i) == "\t") do i = i + 1 end
+      else
+        local j = i
+        while j <= n do
+          local cc = x:sub(j, j)
+          if cc == " " or cc == "\t" or cc == "\n" then break end
+          j = j + 1
+        end
+        out[#out+1] = pandoc.Str(x:sub(i, j - 1))
+        i = j
+      end
+    end
+    return setmetatable(out, Inlines)
+  end
+  if type(x) == "table" and x.tag and INLINE_TAGS[x.tag] then
+    return setmetatable({ x }, Inlines)
+  end
+  if type(x) == "table" then
+    local out = {}
+    for i, v in ipairs(x) do out[i] = v end
+    return setmetatable(out, Inlines)
+  end
+  return setmetatable({ pandoc.Str(tostring(x)) }, Inlines)
+end
+
+function pandoc.Blocks(x)
+  if x == nil then return setmetatable({}, Blocks) end
+  if type(x) == "string" then
+    return setmetatable({ pandoc.Plain({ pandoc.Str(x) }) }, Blocks)
+  end
+  if type(x) == "table" and x.tag and BLOCK_TAGS[x.tag] then
+    return setmetatable({ x }, Blocks)
+  end
+  if type(x) == "table" then
+    local out = {}
+    for i, v in ipairs(x) do out[i] = v end
+    return setmetatable(out, Blocks)
+  end
+  return setmetatable({}, Blocks)
+end
+
+-- ---------------------------------------------------------------------------
+-- ListAttributes — positional (start, style, delimiter) + named
+-- ---------------------------------------------------------------------------
+
+local ListAttributesMT = {}
+ListAttributesMT.__name = "ListAttributes"
+ListAttributesMT.__index = function(self, k)
+  if k == 1 then return rawget(self, "start")
+  elseif k == 2 then return rawget(self, "style")
+  elseif k == 3 then return rawget(self, "delimiter")
+  end
+  return nil
+end
+ListAttributesMT.__newindex = function(self, k, v)
+  if k == 1 then rawset(self, "start", v)
+  elseif k == 2 then rawset(self, "style", v)
+  elseif k == 3 then rawset(self, "delimiter", v)
+  else rawset(self, k, v) end
+end
+
+function pandoc.ListAttributes(start, style, delimiter)
+  return setmetatable({
+    start = start or 1,
+    style = style or "DefaultStyle",
+    delimiter = delimiter or "DefaultDelim",
+  }, ListAttributesMT)
+end
+
+-- ---------------------------------------------------------------------------
+-- SimpleTable — legacy simple-table constructor and conversions
+-- ---------------------------------------------------------------------------
+
+function pandoc.SimpleTable(caption, aligns, widths, headers, rows)
+  return {
+    tag = "SimpleTable",
+    caption = List.new(caption or {}),
+    aligns = List.new(aligns or {}),
+    widths = List.new(widths or {}),
+    headers = List.new(headers or {}),
+    rows = List.new(rows or {}),
+  }
+end
+
+function pandoc.utils.to_simple_table(el)
+  if not el or el.tag ~= "Table" then
+    error("pandoc.utils.to_simple_table: argument is not a Table")
+  end
+  local caption = List.new({})
+  if el.caption and el.caption.long then
+    for _, b in ipairs(el.caption.long) do
+      if b.tag == "Plain" or b.tag == "Para" then
+        for _, c in ipairs(b.content or {}) do caption:insert(c) end
+      end
+    end
+  end
+  local aligns = List.new({})
+  local widths = List.new({})
+  for _, spec in ipairs(el.colspecs or {}) do
+    aligns:insert(spec[1] or "AlignDefault")
+    local cw = spec[2]
+    if cw and cw.tag == "ColWidth" then widths:insert(cw.width)
+    else widths:insert(0) end
+  end
+  local headers = List.new({})
+  local head_rows = (el.head or {}).rows or {}
+  if #head_rows > 0 then
+    for _, cell in ipairs(head_rows[1].cells or {}) do
+      headers:insert(List.new(cell.content or {}))
+    end
+  end
+  local rows = List.new({})
+  for _, body in ipairs(el.bodies or {}) do
+    for _, row in ipairs(body.body or {}) do
+      local cells = List.new({})
+      for _, cell in ipairs(row.cells or {}) do
+        cells:insert(List.new(cell.content or {}))
+      end
+      rows:insert(cells)
+    end
+  end
+  return pandoc.SimpleTable(caption, aligns, widths, headers, rows)
+end
+
+function pandoc.utils.from_simple_table(st)
+  -- Convert a SimpleTable back to a modern Table block.
+  local ncols = #st.aligns
+  local colspecs = List.new({})
+  for i = 1, ncols do
+    local w = st.widths[i] or 0
+    local cw = (w > 0) and { tag = "ColWidth", width = w }
+                       or { tag = "ColWidthDefault" }
+    colspecs:insert({ st.aligns[i] or "AlignDefault", cw })
+  end
+  local function make_cell(content)
+    return {
+      attr = pandoc.Attr(),
+      alignment = "AlignDefault",
+      row_span = 1, col_span = 1,
+      content = { pandoc.Plain(content or {}) },
+    }
+  end
+  local function make_row(cells)
+    local cs = {}
+    for _, c in ipairs(cells or {}) do cs[#cs+1] = make_cell(c) end
+    return { attr = pandoc.Attr(), cells = cs }
+  end
+  local head_rows = {}
+  if st.headers and #st.headers > 0 then
+    -- Non-empty header row
+    local any = false
+    for _, h in ipairs(st.headers) do if #h > 0 then any = true break end end
+    if any then head_rows[1] = make_row(st.headers) end
+  end
+  local head = { attr = pandoc.Attr(), rows = head_rows }
+  local body_rows = {}
+  for _, r in ipairs(st.rows or {}) do body_rows[#body_rows+1] = make_row(r) end
+  local body = {
+    attr = pandoc.Attr(),
+    row_head_columns = 0,
+    head = {},
+    body = body_rows,
+  }
+  local foot = { attr = pandoc.Attr(), rows = {} }
+  local caption = { short = nil, long = {} }
+  if st.caption and #st.caption > 0 then
+    caption.long = { pandoc.Plain(st.caption) }
+  end
+  return pandoc.Table(caption, colspecs, head, { body }, foot, pandoc.Attr())
+end
+
+-- ---------------------------------------------------------------------------
+-- pandoc.utils.to_roman_numeral
+-- ---------------------------------------------------------------------------
+
+function pandoc.utils.to_roman_numeral(n)
+  n = tonumber(n) or 0
+  if n <= 0 or n >= 4000 then return tostring(n) end
+  local syms = {
+    { 1000, "M" }, { 900, "CM" }, { 500, "D" }, { 400, "CD" },
+    { 100, "C" },  { 90, "XC" },  { 50, "L" },  { 40, "XL" },
+    { 10, "X" },   { 9, "IX" },   { 5, "V" },   { 4, "IV" },
+    { 1, "I" },
+  }
+  local out = {}
+  for _, s in ipairs(syms) do
+    while n >= s[1] do out[#out+1] = s[2]; n = n - s[1] end
+  end
+  return table.concat(out)
+end
+
+-- ---------------------------------------------------------------------------
 -- walk
 -- ---------------------------------------------------------------------------
 -- Pandoc filter semantics: bottom-up traversal. For each element visited,
@@ -555,6 +858,10 @@ end
 function walk_element(el, filter)
   if type(el) ~= "table" or el.tag == nil then return el end
   local tag = el.tag
+  -- Image uses a `caption` field (list of inlines) instead of `content`.
+  if tag == "Image" and el.caption and type(el.caption) == "table" then
+    el.caption = walk_list(el.caption, filter, "Inline")
+  end
   -- Recurse into children first (bottom-up)
   if el.content and type(el.content) == "table" then
     if tag == "LineBlock" then
@@ -652,6 +959,8 @@ function pandoc.utils.type(x)
   local mt = getmetatable(x)
   if mt == Pandoc then return "Pandoc" end
   if mt == Attr then return "Attr" end
+  if mt and mt.__name == "Inlines" then return "Inlines" end
+  if mt and mt.__name == "Blocks" then return "Blocks" end
   if mt == List then return "List" end
   if mt == Element then
     if INLINE_TAGS[x.tag] then return "Inline" end
