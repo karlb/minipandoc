@@ -56,10 +56,20 @@ mostly independent.
   `tests/wasi_smoke.rs` is a cargo-integrated smoke test that verifies
   mlua + vendored Lua 5.4 boots and converts djot → html in the wasm
   sandbox. Release wasm: **1.3 MB raw, 399 KB gzipped** — roughly 1/15
-  the size of pandoc-wasm, matching the success signal. Browser target
-  (`wasm32-unknown-unknown` via `wasm-bindgen`) remains future work —
-  mlua's C-Lua path needs libc/setjmp which only `wasip1` (WASI) or
-  `emscripten` supply; WASI is lighter and cleaner.
+  the size of pandoc-wasm, matching the success signal.
+- **Browser target** — the same WASI binary runs unchanged in the
+  browser under a pure-JS WASI shim. Vendored
+  [`@bjorn3/browser_wasi_shim`](https://github.com/bjorn3/browser_wasi_shim)
+  (~20 KB min, zero deps) at `scripts/vendor/browser_wasi_shim/`
+  implements `wasi_snapshot_preview1`; `web/minipandoc.mjs` is a small
+  ES-module loader exposing `convert(input, from, to, { standalone })`;
+  `web/index.html` is a working demo. `scripts/serve-browser-demo.sh`
+  starts `python3 -m http.server` after verifying a release wasm is
+  built. No emscripten, no `wasm32-unknown-unknown`, no Luau — the
+  browser path is a pure JS layer over the existing Lua-5.4-backed
+  WASI artifact, so pandoc Lua filters keep working unmodified. Still
+  open: a markdown reader (success signal #3's final piece) and a
+  packaged npm distribution.
 
 ## Medium-term
 
@@ -86,18 +96,6 @@ in Lua. Options:
 
 Pick an approach before committing. Expect weeks of iteration against
 pandoc's test corpus.
-
-### Browser WASM target
-
-The WASI build above runs in Node.js and any wasi runtime. Browser
-deployment (no filesystem) needs either:
-1. `wasm32-unknown-emscripten` with emsdk and the wasmoon-style
-   filesystem shim (heavier; ~1 GB of SDK).
-2. A Rust/Lua stack without C setjmp/longjmp — e.g. mlua's `luau`
-   feature with `wasm32-unknown-unknown`. Loses Lua 5.4 compat, so
-   pandoc Lua filters may not run unmodified.
-
-Defer until there's demand from a browser-targeted downstream.
 
 ## Longer-term
 

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>minipandoc — browser demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font: 14px/1.4 system-ui, sans-serif;
+        max-width: 900px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      h1 { margin-top: 0; }
+      .controls { display: flex; gap: 1rem; align-items: center; margin: 0.75rem 0; flex-wrap: wrap; }
+      label { display: flex; gap: 0.4rem; align-items: center; }
+      textarea, pre {
+        width: 100%;
+        min-height: 10rem;
+        font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace;
+        box-sizing: border-box;
+        padding: 0.5rem;
+        border: 1px solid #bbb;
+        border-radius: 4px;
+        background: #fafafa;
+      }
+      pre { overflow: auto; white-space: pre-wrap; }
+      .note { color: #666; font-size: 12px; }
+      button { padding: 0.4rem 1rem; cursor: pointer; }
+      .error { color: #a00; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>minipandoc <span class="note">browser demo</span></h1>
+    <p class="note">
+      The WASI-compiled binary runs entirely in your browser via
+      <a href="https://github.com/bjorn3/browser_wasi_shim">browser_wasi_shim</a>.
+      Nothing is sent to a server.
+    </p>
+
+    <div class="controls">
+      <label>From
+        <select id="from">
+          <option value="djot" selected>djot</option>
+          <option value="native">native</option>
+        </select>
+      </label>
+      <label>To
+        <select id="to">
+          <option value="html" selected>html</option>
+          <option value="djot">djot</option>
+          <option value="latex">latex</option>
+          <option value="markdown">markdown</option>
+          <option value="native">native</option>
+          <option value="plain">plain</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="standalone" /> standalone (-s)</label>
+      <button id="convert">Convert</button>
+    </div>
+    <p class="note">
+      Readers: djot, native. Writers: djot, html, latex, markdown, native, plain.
+    </p>
+
+    <textarea id="input"># Hello
+
+A paragraph with _emph_ and *strong* and [link](https://x.org) and `code`.
+
+- item one
+- item two
+
+1. first
+2. second
+</textarea>
+
+    <h3>Output</h3>
+    <pre id="output"></pre>
+
+    <script type="module">
+      import { convert } from "./minipandoc.mjs";
+      const $ = (id) => document.getElementById(id);
+      $("convert").addEventListener("click", async () => {
+        const out = $("output");
+        out.classList.remove("error");
+        out.textContent = "converting…";
+        try {
+          const result = await convert(
+            $("input").value,
+            $("from").value,
+            $("to").value,
+            { standalone: $("standalone").checked },
+          );
+          out.textContent = result;
+        } catch (err) {
+          out.classList.add("error");
+          out.textContent = String(err?.message ?? err);
+        }
+      });
+    </script>
+  </body>
+</html>
