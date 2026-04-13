@@ -1,0 +1,34 @@
+[ Header
+    1
+    ( "hello-world" , [] , [] )
+    [ Str "Hello" , Space , Str "World" ]
+, Para
+    [ Str "A"
+    , Space
+    , Str "paragraph"
+    , Space
+    , Str "with"
+    , Space
+    , Emph [ Str "emph" ]
+    , Str ","
+    , Space
+    , Strong [ Str "strong" ]
+    , Str ","
+    , Space
+    , Code ( "" , [] , [] ) "code"
+    , Str ","
+    , Space
+    , Link
+        ( "" , [] , [] ) [ Str "link" ] ( "https://x.org" , "t" )
+    , Str "."
+    ]
+, BulletList
+    [ [ Plain [ Str "item" , Space , Str "one" ] ]
+    , [ Plain [ Str "item" , Space , Str "two" ] ]
+    ]
+, OrderedList
+    ( 1 , Decimal , Period )
+    [ [ Plain [ Str "first" ] ] , [ Plain [ Str "second" ] ] ]
+, BlockQuote [ Para [ Str "A" , Space , Str "quote." ] ]
+, CodeBlock ( "" , [ "python" ] , [] ) "print(\"hi\")"
+]

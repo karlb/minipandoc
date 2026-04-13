@@ -30,6 +30,14 @@ mostly independent.
   format registry searches `templates/` under data dirs before
   falling back to the bundled defaults. Replaces the html writer's
   hardcoded HTML5 shell.
+- **Markdown writer** — pure-Lua pandoc-flavored markdown writer at
+  `scripts/writers/markdown.lua` (~600 lines). ATX headers with attr
+  blocks, pipe + grid tables, fenced code with info-string, fenced
+  divs, footnotes collected to end-of-document, YAML front-matter via
+  bundled `default.markdown` template. Parity test skips gracefully
+  when pandoc isn't on PATH; smoke-only fallback for fixtures where
+  we intentionally diverge (curly quotes, grid-table widths, escape
+  set). `minipandoc -f djot -t markdown input.dj` now works.
 
 ## Medium-term
 
@@ -48,12 +56,6 @@ Unlocks round-trip validation against real HTML content.
 
 Uses `pandoc.layout`, conceptually similar to djot-writer. Larger scope
 (math, citations, figures with captions) but mostly combinator work.
-
-### Markdown writer
-
-Pandoc-flavored markdown with extensions (smart, pipe tables, task lists,
-raw blocks). Uses `pandoc.layout`. Medium-large — lots of edge cases in
-escaping.
 
 ### Markdown reader — the hardest single piece
 
