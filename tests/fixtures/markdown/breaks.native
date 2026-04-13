@@ -1,0 +1,27 @@
+[ Para
+    [ Str "A"
+    , Space
+    , Str "line"
+    , Space
+    , Str "with"
+    , Space
+    , Str "linebreak."
+    , LineBreak
+    , Str "Continues"
+    , Space
+    , Str "here."
+    ]
+, Para
+    [ Str "A"
+    , Space
+    , Str "line"
+    , Space
+    , Str "with"
+    , Space
+    , Str "softbreak."
+    , SoftBreak
+    , Str "Soft"
+    , Space
+    , Str "continuation."
+    ]
+]

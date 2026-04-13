@@ -1,0 +1,36 @@
+[ Header
+    1
+    ( "main"
+    , [ "primary" , "huge" ]
+    , [ ( "foo" , "bar" ) , ( "baz" , "qq qq" ) ]
+    )
+    [ Str "Heading" ]
+, Para
+    [ Str "A"
+    , Space
+    , Span ( "lnk" , [ "highlight" ] , [] ) [ Str "link" ]
+    , Space
+    , Str "and"
+    , Space
+    , Str "an"
+    , Space
+    , Str "!"
+    , Link
+        ( "fig1" , [] , [ ( "width" , "100" ) ] )
+        [ Str "image" ]
+        ( "i.png" , "t" )
+    , Str "."
+    ]
+, Div
+    ( "n1" , [ "note" ] , [] )
+    [ Para
+        [ Str "Content"
+        , Space
+        , Str "of"
+        , Space
+        , Str "the"
+        , Space
+        , Str "div."
+        ]
+    ]
+]

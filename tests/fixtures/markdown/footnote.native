@@ -1,0 +1,12 @@
+[ Para
+    [ Str "A"
+    , Space
+    , Str "footnote"
+    , Space
+    , Str "ref."
+    , Note
+        [ Para
+            [ Str "The" , Space , Str "note" , Space , Str "body." ]
+        ]
+    ]
+]

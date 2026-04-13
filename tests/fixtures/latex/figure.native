@@ -1,0 +1,13 @@
+[ Para
+    [ Str "!"
+    , Link
+        ( "" , [] , [] )
+        [ Str "Caption" , Space , Str "here" ]
+        ( "img.png" , "" )
+    ]
+, Para
+    [ Str "!"
+    , Link
+        ( "fig:x" , [] , [] ) [ Str "Another" ] ( "x.png" , "" )
+    ]
+]

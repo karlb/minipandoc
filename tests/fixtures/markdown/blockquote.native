@@ -1,0 +1,8 @@
+[ BlockQuote
+    [ Para
+        [ Str "Quote" , Space , Str "line" , Space , Str "one." ]
+    , Para [ Str "Second" , Space , Str "paragraph." ]
+    ]
+, Para
+    [ Str "Not" , Space , Str "a" , Space , Str "quote." ]
+]

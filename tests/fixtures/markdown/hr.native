@@ -1,0 +1,4 @@
+[ Para [ Str "Before" ]
+, HorizontalRule
+, Para [ Str "After" ]
+]

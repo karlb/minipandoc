@@ -1,0 +1,12 @@
+[ Para
+    [ Str "Some"
+    , Space
+    , Quoted DoubleQuote [ Str "double" ]
+    , Space
+    , Str "and"
+    , Space
+    , Quoted SingleQuote [ Str "single" ]
+    , Space
+    , Str "quotes."
+    ]
+]

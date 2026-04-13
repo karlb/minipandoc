@@ -30,6 +30,36 @@ mostly independent.
   format registry searches `templates/` under data dirs before
   falling back to the bundled defaults. Replaces the html writer's
   hardcoded HTML5 shell.
+- **Markdown writer** — pure-Lua pandoc-flavored markdown writer at
+  `scripts/writers/markdown.lua` (~600 lines). ATX headers with attr
+  blocks, pipe + grid tables, fenced code with info-string, fenced
+  divs, footnotes collected to end-of-document, YAML front-matter via
+  bundled `default.markdown` template. Parity test skips gracefully
+  when pandoc isn't on PATH; smoke-only fallback for fixtures where
+  we intentionally diverge (curly quotes, grid-table widths, escape
+  set). `minipandoc -f djot -t markdown input.dj` now works.
+- **LaTeX writer** — pure-Lua LaTeX writer at `scripts/writers/latex.lua`
+  (~500 lines). Section commands with `\hypertarget`/`\label` wrapping
+  for ids, `enumitem`-style ordered list labels, `longtable` with
+  booktabs rules for simple tables (verbatim-wrapped plain fallback for
+  complex), `\footnote{}` inline, `\href`/`\hyperlink` for external vs
+  internal links, `\includegraphics` with width/height attrs, figure
+  environment with caption/label, `\verb` with auto delimiter picking
+  for inline code. Bundled `default.latex` template ships a minimal
+  `article` preamble (hyperref, graphicx, ulem, longtable, booktabs).
+  `minipandoc -f djot -t latex -s input.dj` now produces a full
+  compilable document.
+- **WASI build** — the existing CLI binary cross-compiles to
+  `wasm32-wasip1` unchanged. `scripts/build-wasm.sh` drives the build
+  (requires clang 20+ and the wasi-sdk sysroot via `WASI_SYSROOT`).
+  `tests/wasi/run-wasi.mjs` runs the `.wasm` under Node's WASI shim;
+  `tests/wasi_smoke.rs` is a cargo-integrated smoke test that verifies
+  mlua + vendored Lua 5.4 boots and converts djot → html in the wasm
+  sandbox. Release wasm: **1.3 MB raw, 399 KB gzipped** — roughly 1/15
+  the size of pandoc-wasm, matching the success signal. Browser target
+  (`wasm32-unknown-unknown` via `wasm-bindgen`) remains future work —
+  mlua's C-Lua path needs libc/setjmp which only `wasip1` (WASI) or
+  `emscripten` supply; WASI is lighter and cleaner.
 
 ## Medium-term
 
@@ -44,17 +74,6 @@ Harder than the writer because HTML needs real parsing. Two approaches:
 
 Unlocks round-trip validation against real HTML content.
 
-### LaTeX writer
-
-Uses `pandoc.layout`, conceptually similar to djot-writer. Larger scope
-(math, citations, figures with captions) but mostly combinator work.
-
-### Markdown writer
-
-Pandoc-flavored markdown with extensions (smart, pipe tables, task lists,
-raw blocks). Uses `pandoc.layout`. Medium-large — lots of edge cases in
-escaping.
-
 ### Markdown reader — the hardest single piece
 
 The original plan flagged this: pandoc's Haskell markdown reader is
@@ -68,15 +87,17 @@ in Lua. Options:
 Pick an approach before committing. Expect weeks of iteration against
 pandoc's test corpus.
 
-### WASM target — orthogonal, architecturally important
+### Browser WASM target
 
-The project's unique value proposition vs `pandoc-wasm`: Lua support
-intact, ~1/15th the size. `mlua` supports `wasm32-unknown-unknown` /
-`wasm32-wasi` with the right features. Format scripts already embed via
-`include_str!`, so bundling works out of the box.
+The WASI build above runs in Node.js and any wasi runtime. Browser
+deployment (no filesystem) needs either:
+1. `wasm32-unknown-emscripten` with emsdk and the wasmoon-style
+   filesystem shim (heavier; ~1 GB of SDK).
+2. A Rust/Lua stack without C setjmp/longjmp — e.g. mlua's `luau`
+   feature with `wasm32-unknown-unknown`. Loses Lua 5.4 compat, so
+   pandoc Lua filters may not run unmodified.
 
-Work: Cargo feature gating, `wasm-bindgen` or manual JS wrapper, browser
-+ Node.js smoke tests. A couple days if the dependency graph cooperates.
+Defer until there's demand from a browser-targeted downstream.
 
 ## Longer-term
 
