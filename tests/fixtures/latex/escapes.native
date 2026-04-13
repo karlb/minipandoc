@@ -1,0 +1,30 @@
+[ Para
+    [ Str "Text"
+    , Space
+    , Str "with"
+    , Space
+    , Quoted DoubleQuote [ Str "quotes" ]
+    , Space
+    , Str "and"
+    , Space
+    , Str "\\backslashes"
+    , Space
+    , Str "and"
+    , Space
+    , Str "newlines"
+    , RawInline (Format "tex") "\\n "
+    , Str "in"
+    , Space
+    , Str "code:"
+    , Space
+    , Code ( "" , [] , [] ) "line1\\nline2"
+    , Str "."
+    ]
+, CodeBlock ( "" , [] , [] ) "multi\nline\ncode"
+, Para
+    [ Str "Raw"
+    , Space
+    , RawInline (Format "html") "<em>html</em>"
+    , Str "."
+    ]
+]

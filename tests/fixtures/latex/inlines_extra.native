@@ -1,0 +1,18 @@
+[ Para
+    [ Str "Text"
+    , Space
+    , Str "with"
+    , Space
+    , SmallCaps [ Str "SmallCaps" ]
+    , Str ","
+    , Space
+    , Subscript [ Str "sub" ]
+    , Str ","
+    , Space
+    , Superscript [ Str "sup" ]
+    , Str ","
+    , Space
+    , Strikeout [ Str "strike" ]
+    , Str "."
+    ]
+]

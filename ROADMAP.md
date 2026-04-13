@@ -38,6 +38,17 @@ mostly independent.
   when pandoc isn't on PATH; smoke-only fallback for fixtures where
   we intentionally diverge (curly quotes, grid-table widths, escape
   set). `minipandoc -f djot -t markdown input.dj` now works.
+- **LaTeX writer** — pure-Lua LaTeX writer at `scripts/writers/latex.lua`
+  (~500 lines). Section commands with `\hypertarget`/`\label` wrapping
+  for ids, `enumitem`-style ordered list labels, `longtable` with
+  booktabs rules for simple tables (verbatim-wrapped plain fallback for
+  complex), `\footnote{}` inline, `\href`/`\hyperlink` for external vs
+  internal links, `\includegraphics` with width/height attrs, figure
+  environment with caption/label, `\verb` with auto delimiter picking
+  for inline code. Bundled `default.latex` template ships a minimal
+  `article` preamble (hyperref, graphicx, ulem, longtable, booktabs).
+  `minipandoc -f djot -t latex -s input.dj` now produces a full
+  compilable document.
 
 ## Medium-term
 
@@ -51,11 +62,6 @@ Harder than the writer because HTML needs real parsing. Two approaches:
 2. Write one in LPeg.
 
 Unlocks round-trip validation against real HTML content.
-
-### LaTeX writer
-
-Uses `pandoc.layout`, conceptually similar to djot-writer. Larger scope
-(math, citations, figures with captions) but mostly combinator work.
 
 ### Markdown reader — the hardest single piece
 

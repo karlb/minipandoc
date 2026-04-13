@@ -178,18 +178,21 @@ const DJOT_WRITER: &str = include_str!(concat!(env!("OUT_DIR"), "/djot_writer.lu
 const HTML_WRITER: &str = include_str!("../scripts/writers/html.lua");
 const PLAIN_WRITER: &str = include_str!("../scripts/writers/plain.lua");
 const MARKDOWN_WRITER: &str = include_str!("../scripts/writers/markdown.lua");
+const LATEX_WRITER: &str = include_str!("../scripts/writers/latex.lua");
 
 pub const TEMPLATE_LUA: &str = include_str!("../scripts/template.lua");
 
 const DEFAULT_HTML_TEMPLATE: &str = include_str!("../scripts/templates/default.html");
 const DEFAULT_PLAIN_TEMPLATE: &str = include_str!("../scripts/templates/default.plain");
 const DEFAULT_MARKDOWN_TEMPLATE: &str = include_str!("../scripts/templates/default.markdown");
+const DEFAULT_LATEX_TEMPLATE: &str = include_str!("../scripts/templates/default.latex");
 
 fn builtin_template(name: &str) -> Option<&'static str> {
     match name {
         "default.html" => Some(DEFAULT_HTML_TEMPLATE),
         "default.plain" => Some(DEFAULT_PLAIN_TEMPLATE),
         "default.markdown" => Some(DEFAULT_MARKDOWN_TEMPLATE),
+        "default.latex" => Some(DEFAULT_LATEX_TEMPLATE),
         _ => None,
     }
 }
@@ -205,6 +208,7 @@ fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'stati
         ("markdown", ScriptKind::Writer) => {
             Some((MARKDOWN_WRITER, "<builtin:writers/markdown.lua>"))
         }
+        ("latex", ScriptKind::Writer) => Some((LATEX_WRITER, "<builtin:writers/latex.lua>")),
         _ => None,
     }
 }
@@ -212,7 +216,7 @@ fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'stati
 fn builtin_names(kind: ScriptKind) -> &'static [&'static str] {
     match kind {
         ScriptKind::Reader => &["djot", "native"],
-        ScriptKind::Writer => &["djot", "html", "markdown", "native", "plain"],
+        ScriptKind::Writer => &["djot", "html", "latex", "markdown", "native", "plain"],
     }
 }
 
