@@ -94,6 +94,22 @@ impl FormatRegistry {
         Err(Error::UnknownFormat(name.to_string()))
     }
 
+    /// Load a named template (e.g. "default.html"). Searches data dirs
+    /// under `templates/`, then falls back to the bundled built-ins.
+    pub fn load_template(&self, name: &str) -> Option<String> {
+        for dir in self.data_dirs.iter() {
+            let mut candidate = dir.clone();
+            candidate.push("templates");
+            candidate.push(name);
+            if candidate.is_file() {
+                if let Ok(s) = std::fs::read_to_string(&candidate) {
+                    return Some(s);
+                }
+            }
+        }
+        builtin_template(name).map(|s| s.to_string())
+    }
+
     pub fn list_formats(&self, kind: ScriptKind) -> Vec<String> {
         let mut out = BTreeSet::new();
         for b in builtin_names(kind.clone()) {
@@ -161,6 +177,19 @@ const DJOT_READER: &str = include_str!(concat!(env!("OUT_DIR"), "/djot_reader.lu
 const DJOT_WRITER: &str = include_str!(concat!(env!("OUT_DIR"), "/djot_writer.lua"));
 const HTML_WRITER: &str = include_str!("../scripts/writers/html.lua");
 const PLAIN_WRITER: &str = include_str!("../scripts/writers/plain.lua");
+
+pub const TEMPLATE_LUA: &str = include_str!("../scripts/template.lua");
+
+const DEFAULT_HTML_TEMPLATE: &str = include_str!("../scripts/templates/default.html");
+const DEFAULT_PLAIN_TEMPLATE: &str = include_str!("../scripts/templates/default.plain");
+
+fn builtin_template(name: &str) -> Option<&'static str> {
+    match name {
+        "default.html" => Some(DEFAULT_HTML_TEMPLATE),
+        "default.plain" => Some(DEFAULT_PLAIN_TEMPLATE),
+        _ => None,
+    }
+}
 
 fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'static str)> {
     match (name, kind) {

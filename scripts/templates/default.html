@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html$if(lang)$ lang="$lang$"$endif$>
+<head>
+<meta charset="utf-8" />
+<meta name="generator" content="minipandoc" />
+<title>$if(pagetitle)$$pagetitle$$else$$title$$endif$</title>
+$for(css)$
+<link rel="stylesheet" href="$css$" />
+$endfor$
+$if(header-includes)$
+$header-includes$
+$endif$
+</head>
+<body>
+$if(title)$
+<header id="title-block-header">
+<h1 class="title">$title$</h1>
+$if(subtitle)$
+<p class="subtitle">$subtitle$</p>
+$endif$
+$for(author)$
+<p class="author">$author$</p>
+$endfor$
+$if(date)$
+<p class="date">$date$</p>
+$endif$
+</header>
+$endif$
+$body$
+</body>
+</html>

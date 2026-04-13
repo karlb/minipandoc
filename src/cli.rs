@@ -97,6 +97,14 @@ pub fn run() -> Result<(), Error> {
     let to = cli.to.as_deref().ok_or_else(|| {
         Error::Other("no --to format specified".to_string())
     })?;
+    let template = if let Some(path) = &cli.template {
+        let p = std::path::Path::new(path);
+        let body = std::fs::read_to_string(p)
+            .map_err(|e| Error::Io(format!("{path}: {e}")))?;
+        Some(body)
+    } else {
+        None
+    };
     let cfg = Config {
         from: from.to_string(),
         to: to.to_string(),
@@ -107,6 +115,7 @@ pub fn run() -> Result<(), Error> {
         standalone: cli.standalone,
         metadata: parse_kv(&cli.metadata),
         variables: parse_kv(&cli.variable),
+        template,
     };
     pipeline::run(&cfg)
 }

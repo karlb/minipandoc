@@ -49,6 +49,7 @@ pub struct Config {
     pub standalone: bool,
     pub metadata: Vec<(String, String)>,
     pub variables: Vec<(String, String)>,
+    pub template: Option<String>,
 }
 
 pub fn run(cfg: &Config) -> Result<(), Error> {
@@ -70,6 +71,7 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
         standalone: cfg.standalone,
         columns: 72,
         wrap: "auto".to_string(),
+        template: cfg.template.clone(),
         ..Default::default()
     };
     for (k, v) in &cfg.variables {

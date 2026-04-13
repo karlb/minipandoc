@@ -471,5 +471,17 @@ function Writer(doc, opts)
   local body = blocks(doc.blocks or {}, blankline)
   local notes = render_footnotes()
   local cols = (opts and opts.columns) or 72
-  return layout.render(concat{ body, notes }, cols)
+  local out = layout.render(concat{ body, notes }, cols)
+  if opts and opts.standalone then
+    local tpl_src = (opts and opts.template ~= "" and opts.template)
+                    or pandoc.template.default(FORMAT or "plain")
+    local compiled = pandoc.template.compile(tpl_src)
+    local ctx = pandoc.template.meta_to_context(doc.meta or {})
+    if opts.variables then
+      for k, v in pairs(opts.variables) do ctx[k] = v end
+    end
+    ctx.body = out
+    out = pandoc.template.apply(compiled, ctx)
+  end
+  return out
 end

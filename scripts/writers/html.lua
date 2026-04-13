@@ -425,31 +425,20 @@ local function render_footnotes()
 end
 
 -- ---------------------------------------------------------------------------
--- Standalone template (minimal hardcoded HTML5 shell)
--- ---------------------------------------------------------------------------
-
-local function standalone_wrap(body, doc)
-  local title = ""
-  if doc.meta and doc.meta.title then
-    title = escape_text(stringify(doc.meta.title))
-  end
-  return table.concat({
-    "<!DOCTYPE html>",
-    "<html>",
-    "<head>",
-    '<meta charset="utf-8">',
-    "<title>" .. title .. "</title>",
-    "</head>",
-    "<body>",
-    body,
-    "</body>",
-    "</html>",
-  }, "\n")
-end
-
--- ---------------------------------------------------------------------------
 -- Writer entry point
 -- ---------------------------------------------------------------------------
+
+local function build_template_context(doc, opts, body)
+  local ctx = pandoc.template.meta_to_context(doc.meta or {})
+  if opts and opts.variables then
+    for k, v in pairs(opts.variables) do ctx[k] = v end
+  end
+  ctx.body = body
+  if not ctx.pagetitle and ctx.title then
+    ctx.pagetitle = ctx.title
+  end
+  return ctx
+end
 
 function Writer(doc, opts)
   footnotes = {}
@@ -457,7 +446,10 @@ function Writer(doc, opts)
   local notes = render_footnotes()
   local out = layout.render(concat{ body, notes })
   if opts and opts.standalone then
-    out = standalone_wrap(out, doc)
+    local tpl_src = (opts and opts.template ~= "" and opts.template)
+                    or pandoc.template.default(FORMAT or "html")
+    local compiled = pandoc.template.compile(tpl_src)
+    out = pandoc.template.apply(compiled, build_template_context(doc, opts, out))
   end
   return out
 end
