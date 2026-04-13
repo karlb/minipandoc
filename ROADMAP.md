@@ -49,6 +49,17 @@ mostly independent.
   `article` preamble (hyperref, graphicx, ulem, longtable, booktabs).
   `minipandoc -f djot -t latex -s input.dj` now produces a full
   compilable document.
+- **WASI build** — the existing CLI binary cross-compiles to
+  `wasm32-wasip1` unchanged. `scripts/build-wasm.sh` drives the build
+  (requires clang 20+ and the wasi-sdk sysroot via `WASI_SYSROOT`).
+  `tests/wasi/run-wasi.mjs` runs the `.wasm` under Node's WASI shim;
+  `tests/wasi_smoke.rs` is a cargo-integrated smoke test that verifies
+  mlua + vendored Lua 5.4 boots and converts djot → html in the wasm
+  sandbox. Release wasm: **1.3 MB raw, 399 KB gzipped** — roughly 1/15
+  the size of pandoc-wasm, matching the success signal. Browser target
+  (`wasm32-unknown-unknown` via `wasm-bindgen`) remains future work —
+  mlua's C-Lua path needs libc/setjmp which only `wasip1` (WASI) or
+  `emscripten` supply; WASI is lighter and cleaner.
 
 ## Medium-term
 
@@ -76,15 +87,17 @@ in Lua. Options:
 Pick an approach before committing. Expect weeks of iteration against
 pandoc's test corpus.
 
-### WASM target — orthogonal, architecturally important
+### Browser WASM target
 
-The project's unique value proposition vs `pandoc-wasm`: Lua support
-intact, ~1/15th the size. `mlua` supports `wasm32-unknown-unknown` /
-`wasm32-wasi` with the right features. Format scripts already embed via
-`include_str!`, so bundling works out of the box.
+The WASI build above runs in Node.js and any wasi runtime. Browser
+deployment (no filesystem) needs either:
+1. `wasm32-unknown-emscripten` with emsdk and the wasmoon-style
+   filesystem shim (heavier; ~1 GB of SDK).
+2. A Rust/Lua stack without C setjmp/longjmp — e.g. mlua's `luau`
+   feature with `wasm32-unknown-unknown`. Loses Lua 5.4 compat, so
+   pandoc Lua filters may not run unmodified.
 
-Work: Cargo feature gating, `wasm-bindgen` or manual JS wrapper, browser
-+ Node.js smoke tests. A couple days if the dependency graph cooperates.
+Defer until there's demand from a browser-targeted downstream.
 
 ## Longer-term
 
