@@ -1,0 +1,34 @@
+[ Header
+    1
+    ( "hello-world" , [] , [] )
+    [ Str "Hello" , Space , Str "World" ]
+, Para
+    [ Str "A"
+    , Space
+    , Str "paragraph"
+    , Space
+    , Str "with"
+    , Space
+    , Emph [ Str "emph" ]
+    , Str ","
+    , Space
+    , Strong [ Str "strong" ]
+    , Str ","
+    , Space
+    , Underline [ Str "u" ]
+    , Str ","
+    , Space
+    , Str "and"
+    , Space
+    , Code ( "" , [] , [] ) "code"
+    , Str "."
+    ]
+, Para
+    [ Str "A"
+    , Space
+    , Link
+        ( "" , [] , [] ) [ Str "link" ] ( "https://x.org" , "" )
+    , Space
+    , Str "here."
+    ]
+]

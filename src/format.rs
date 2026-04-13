@@ -160,6 +160,7 @@ const NATIVE_WRITER: &str = include_str!("../scripts/writers/native.lua");
 const DJOT_READER: &str = include_str!(concat!(env!("OUT_DIR"), "/djot_reader.lua"));
 const DJOT_WRITER: &str = include_str!(concat!(env!("OUT_DIR"), "/djot_writer.lua"));
 const HTML_WRITER: &str = include_str!("../scripts/writers/html.lua");
+const PLAIN_WRITER: &str = include_str!("../scripts/writers/plain.lua");
 
 fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'static str)> {
     match (name, kind) {
@@ -168,6 +169,7 @@ fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'stati
         ("djot", ScriptKind::Reader) => Some((DJOT_READER, "<builtin:readers/djot.lua>")),
         ("djot", ScriptKind::Writer) => Some((DJOT_WRITER, "<builtin:writers/djot.lua>")),
         ("html", ScriptKind::Writer) => Some((HTML_WRITER, "<builtin:writers/html.lua>")),
+        ("plain", ScriptKind::Writer) => Some((PLAIN_WRITER, "<builtin:writers/plain.lua>")),
         _ => None,
     }
 }
@@ -175,7 +177,7 @@ fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'stati
 fn builtin_names(kind: ScriptKind) -> &'static [&'static str] {
     match kind {
         ScriptKind::Reader => &["djot", "native"],
-        ScriptKind::Writer => &["djot", "html", "native"],
+        ScriptKind::Writer => &["djot", "html", "native", "plain"],
     }
 }
 
