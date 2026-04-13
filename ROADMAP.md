@@ -11,30 +11,30 @@ mostly independent.
 - **`djot` format** via vendored `jgm/djot.lua` + pure-Lua `pandoc.layout`
   (commit `dd96e7c`). Byte-identical writer output to pandoc running the
   same vendored script.
-- **HTML writer** — pure-Lua, ~340 lines at `scripts/writers/html.lua`.
-  `minipandoc -f djot -t html input.dj` now produces a real deliverable.
-  Semantic round-trip parity against pandoc's HTML reader (strict for
-  clean fixtures; smoke-tested where HTML can't preserve `Quoted`, `Math`,
-  or raw formats losslessly). Includes a minimal hardcoded standalone
-  HTML5 shell; a full template engine remains a separate roadmap item.
-
-## Near-term (next 1-2 sessions)
-
-### Plain writer — quick unblock
-
-Half a day. The vendored djot-writer falls back to
-`pandoc.write(el, "plain")` for complex tables and currently errors
-because we have no `plain` builtin. Shipping it unblocks richer table
-fixtures and gives us an easy format to validate filters against.
-
-### Template engine
-
-Prerequisite for `-s --standalone` to actually produce full documents
-(`<!DOCTYPE html>…<title>{{title}}</title>…`). Accepted as a flag today
-but silently ignored. ~500 lines of Lua or port of pandoc's
-`doctemplates`. Blocks HTML/LaTeX writers from emitting standalone docs.
+- **HTML writer** (commit `1875e27`) — pure-Lua, ~340 lines at
+  `scripts/writers/html.lua`. `minipandoc -f djot -t html input.dj` now
+  produces a real deliverable. Semantic round-trip parity against
+  pandoc's HTML reader (strict for clean fixtures; smoke-tested where
+  HTML can't preserve `Quoted`, `Math`, or raw formats losslessly).
+- **Plain writer** (commit `93fdb9f`) — pure-Lua plain writer at
+  `scripts/writers/plain.lua`. Unblocks djot's complex-table fallback
+  (`pandoc.write(el, "plain")` no longer errors). Byte-parity with
+  `pandoc -t plain` on focused fixtures; complex grid tables emitted
+  but not byte-matched.
+- **Template engine** (commit `f9dabf6`) — pure-Lua doctemplates port at
+  `scripts/template.lua` exposing `pandoc.template.{compile,apply,
+  default,meta_to_context}`. Supports `$var$`, `$if/$else/$endif$`,
+  `$for/$sep/$endfor$`, `$$`, dotted paths, and pandoc's whitespace
+  rule for line-only directives. `--template`, `-V`, and `-M` all
+  flow through. Bundled `default.html` and `default.plain`; the
+  format registry searches `templates/` under data dirs before
+  falling back to the bundled defaults. Replaces the html writer's
+  hardcoded HTML5 shell.
 
 ## Medium-term
+
+The near-term queue is empty — pick the next item from this list based
+on what unblocks the most user-visible value.
 
 ### HTML reader
 
