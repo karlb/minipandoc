@@ -3,8 +3,7 @@
 #
 # Needs a release wasm build to exist at
 # target/wasm32-wasip1/release/minipandoc.wasm. Build it once with
-# scripts/build-wasm.sh (which requires $WASI_SYSROOT and clang 20+); this
-# script does not rebuild because those toolchain deps are heavy.
+# scripts/build-wasm.sh; this script does not rebuild.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 WASM="$HERE/target/wasm32-wasip1/release/minipandoc.wasm"
@@ -14,8 +13,8 @@ if [ ! -f "$WASM" ]; then
   cat >&2 <<EOF
 error: $WASM not found.
 
-Build it first, e.g.:
-  WASI_SYSROOT=/path/to/wasi-sysroot-25.0 scripts/build-wasm.sh release
+Build it first:
+  scripts/build-wasm.sh release
 
 Then rerun this script.
 EOF
