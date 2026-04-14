@@ -175,6 +175,7 @@ const NATIVE_READER: &str = include_str!("../scripts/readers/native.lua");
 const NATIVE_WRITER: &str = include_str!("../scripts/writers/native.lua");
 const DJOT_READER: &str = include_str!(concat!(env!("OUT_DIR"), "/djot_reader.lua"));
 const DJOT_WRITER: &str = include_str!(concat!(env!("OUT_DIR"), "/djot_writer.lua"));
+const HTML_READER: &str = include_str!("../scripts/readers/html.lua");
 const HTML_WRITER: &str = include_str!("../scripts/writers/html.lua");
 const PLAIN_WRITER: &str = include_str!("../scripts/writers/plain.lua");
 const MARKDOWN_WRITER: &str = include_str!("../scripts/writers/markdown.lua");
@@ -203,6 +204,7 @@ fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'stati
         ("native", ScriptKind::Writer) => Some((NATIVE_WRITER, "<builtin:writers/native.lua>")),
         ("djot", ScriptKind::Reader) => Some((DJOT_READER, "<builtin:readers/djot.lua>")),
         ("djot", ScriptKind::Writer) => Some((DJOT_WRITER, "<builtin:writers/djot.lua>")),
+        ("html", ScriptKind::Reader) => Some((HTML_READER, "<builtin:readers/html.lua>")),
         ("html", ScriptKind::Writer) => Some((HTML_WRITER, "<builtin:writers/html.lua>")),
         ("plain", ScriptKind::Writer) => Some((PLAIN_WRITER, "<builtin:writers/plain.lua>")),
         ("markdown", ScriptKind::Writer) => {
@@ -215,7 +217,7 @@ fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'stati
 
 fn builtin_names(kind: ScriptKind) -> &'static [&'static str] {
     match kind {
-        ScriptKind::Reader => &["djot", "native"],
+        ScriptKind::Reader => &["djot", "html", "native"],
         ScriptKind::Writer => &["djot", "html", "latex", "markdown", "native", "plain"],
     }
 }

@@ -7,9 +7,9 @@ knowledge lives in Rust.
 
 ## Current state
 
-Readers: `native`, `djot`. Writers: `native`, `djot`, `html`, `plain`.
-Standalone output via `-s` is template-driven (pandoc-style
-doctemplates).
+Readers: `native`, `djot`, `html`. Writers: `native`, `djot`, `html`,
+`plain`, `markdown`, `latex`. Standalone output via `-s` is
+template-driven (pandoc-style doctemplates).
 
 Committed milestones:
 - `4ef7007` — Phases 1+2: AST, mlua bridge, pipeline, pandoc-compatible CLI, bundled native reader/writer.

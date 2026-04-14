@@ -60,19 +60,24 @@ mostly independent.
   (`wasm32-unknown-unknown` via `wasm-bindgen`) remains future work —
   mlua's C-Lua path needs libc/setjmp which only `wasip1` (WASI) or
   `emscripten` supply; WASI is lighter and cleaner.
+- **HTML reader** — pure-Lua reader at `scripts/readers/html.lua`.
+  Handwritten tokenizer + block/inline parser (no vendored parser, no
+  LPeg) producing pandoc AST directly. Self round-trips against our
+  writer on all shareable fixtures and matches pandoc's HTML reader
+  semantically on the hand-written `tests/fixtures/html/` fixtures
+  (pandoc's syntax-highlighted `sourceCode` soup is smoke-tested only).
+  Unknown tags fall back to `RawInline`/`RawBlock (html)`; footnote
+  refs + `<section id="footnotes">` are reconstructed back into
+  pandoc `Note` elements; `<span class="math">` only recovers to
+  `Math` when the content is wrapped in `\(…\)` / `\[…\]` (our
+  writer's form) — otherwise it stays as `Span`, matching pandoc's
+  reader behavior on rendered-HTML math. `minipandoc -f html -t native
+  input.html` now works.
 
 ## Medium-term
 
 The near-term queue is empty — pick the next item from this list based
 on what unblocks the most user-visible value.
-
-### HTML reader
-
-Harder than the writer because HTML needs real parsing. Two approaches:
-1. Vendor a pure-Lua HTML parser (e.g. `htmlparser`), same pattern as djot.
-2. Write one in LPeg.
-
-Unlocks round-trip validation against real HTML content.
 
 ### Markdown reader — the hardest single piece
 
