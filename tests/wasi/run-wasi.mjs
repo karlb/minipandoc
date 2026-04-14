@@ -26,8 +26,9 @@ const wasi = new WASI({
   args: ["minipandoc", ...userArgs],
   env,
   // Preopen the project root so fixture paths like
-  // "tests/fixtures/djot/basic.dj" resolve.
-  preopens: { "/home/user/minipandoc": "/home/user/minipandoc" },
+  // "tests/fixtures/djot/basic.dj" resolve. Map the host path to itself
+  // so absolute paths passed on argv work unchanged.
+  preopens: { [projectRoot]: projectRoot },
   returnOnExit: true,
 });
 
