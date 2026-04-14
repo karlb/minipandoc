@@ -50,8 +50,10 @@ mostly independent.
   `minipandoc -f djot -t latex -s input.dj` now produces a full
   compilable document.
 - **WASI build** — the existing CLI binary cross-compiles to
-  `wasm32-wasip1` unchanged. `scripts/build-wasm.sh` drives the build
-  (requires clang 20+ and the wasi-sdk sysroot via `WASI_SYSROOT`).
+  `wasm32-wasip1` unchanged. `scripts/build-wasm.sh` drives the build;
+  it auto-provisions a pinned wasi-sdk (clang + sysroot) under
+  `$XDG_CACHE_HOME/minipandoc/` on first run, so zero host setup is
+  required beyond rustup.
   `tests/wasi/run-wasi.mjs` runs the `.wasm` under Node's WASI shim;
   `tests/wasi_smoke.rs` is a cargo-integrated smoke test that verifies
   mlua + vendored Lua 5.4 boots and converts djot → html in the wasm
