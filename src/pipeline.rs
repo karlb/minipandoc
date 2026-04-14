@@ -47,6 +47,7 @@ pub struct Config {
     pub lua_filters: Vec<PathBuf>,
     pub data_dir: Option<PathBuf>,
     pub standalone: bool,
+    pub embed_resources: bool,
     pub metadata: Vec<(String, String)>,
     pub variables: Vec<(String, String)>,
     pub template: Option<String>,
@@ -72,6 +73,7 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
         columns: 72,
         wrap: "auto".to_string(),
         template: cfg.template.clone(),
+        embed_resources: cfg.embed_resources,
         ..Default::default()
     };
     for (k, v) in &cfg.variables {
