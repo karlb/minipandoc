@@ -79,15 +79,15 @@ export async function convert(input, from, to, { standalone = false } = {}) {
   if (standalone) args.push("-s");
   args.push("/input/doc");
 
-  const wasi = new WASI(args, [], fds);
-  // wasi-sdk 25's wasi-libc imports env.__wasi_init_tp (thread-pointer init)
+  // `debug: false` silences the shim's console.log of every WASI call.
+  const wasi = new WASI(args, [], fds, { debug: false });
+  // wasi-sdk's wasi-libc imports env.__wasi_init_tp (thread-pointer init)
   // which isn't part of wasi_snapshot_preview1 and which the shim doesn't
   // supply. We have no threads, so a no-op stub is safe.
-  const imports = {
-    ...wasi.getImportObject(),
+  const instance = await WebAssembly.instantiate(wasmModule, {
+    wasi_snapshot_preview1: wasi.wasiImport,
     env: { __wasi_init_tp: () => {} },
-  };
-  const instance = await WebAssembly.instantiate(wasmModule, imports);
+  });
   const code = wasi.start(instance);
   if (code !== 0) {
     const msg = stderrChunks.join("\n") || `minipandoc exited with code ${code}`;
