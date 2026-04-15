@@ -31,6 +31,7 @@ pub struct WriterOptions {
     pub wrap: String,
     pub variables: BTreeMap<String, String>,
     pub template: Option<String>,
+    pub embed_resources: bool,
 }
 
 impl Default for WriterOptions {
@@ -42,6 +43,7 @@ impl Default for WriterOptions {
             wrap: "auto".to_string(),
             variables: BTreeMap::new(),
             template: None,
+            embed_resources: false,
         }
     }
 }
@@ -57,6 +59,7 @@ impl WriterOptions {
         t.set("standalone", self.standalone)?;
         t.set("columns", self.columns)?;
         t.set("wrap_text", self.wrap.as_str())?;
+        t.set("embed_resources", self.embed_resources)?;
         let vars = lua.create_table()?;
         for (k, v) in &self.variables {
             vars.set(k.as_str(), v.as_str())?;

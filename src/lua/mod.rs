@@ -207,7 +207,113 @@ pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error
             Ok(out)
         })?,
     )?;
+
+    // --- Resource helpers for --embed-resources ------------------------
+    // pandoc.mediabag.fetch(source) -> (mime, contents) | (nil, err)
+    // Local file reads only. URLs and data: sources are rejected so callers
+    // can fall back to leaving the reference untouched.
+    let mediabag: Table = pandoc.get("mediabag")?;
+    mediabag.set(
+        "fetch",
+        lua.create_function(|lua, source: String| {
+            if source.starts_with("http://")
+                || source.starts_with("https://")
+                || source.starts_with("data:")
+            {
+                let msg = lua.create_string(
+                    &format!("remote fetching not supported: {source}"),
+                )?;
+                return Ok((Value::Nil, Value::String(msg)));
+            }
+            match std::fs::read(&source) {
+                Ok(bytes) => {
+                    let mime = guess_mime(&source);
+                    Ok((
+                        Value::String(lua.create_string(mime.as_bytes())?),
+                        Value::String(lua.create_string(&bytes)?),
+                    ))
+                }
+                Err(e) => Ok((
+                    Value::Nil,
+                    Value::String(lua.create_string(e.to_string().as_bytes())?),
+                )),
+            }
+        })?,
+    )?;
+
+    // pandoc._internal.base64_encode(bytes) -> string
+    let internal: Table = pandoc.get("_internal")?;
+    internal.set(
+        "base64_encode",
+        lua.create_function(|lua, bytes: mlua::String| {
+            let raw = bytes.as_bytes();
+            let encoded = base64_encode(&raw);
+            Ok(lua.create_string(encoded.as_bytes())?)
+        })?,
+    )?;
     Ok(())
+}
+
+/// Guess MIME type from a file path's extension. Used by
+/// `pandoc.mediabag.fetch` to label embedded resources.
+fn guess_mime(path: &str) -> String {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    let s = match ext.as_deref() {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("ico") => "image/x-icon",
+        Some("pdf") => "application/pdf",
+        Some("css") => "text/css",
+        Some("js") => "application/javascript",
+        Some("json") => "application/json",
+        Some("html") | Some("htm") => "text/html",
+        Some("txt") => "text/plain",
+        _ => "application/octet-stream",
+    };
+    s.to_string()
+}
+
+/// Standard base64 encoder (RFC 4648, alphabet `A-Za-z0-9+/`, `=` padding).
+/// Hand-rolled to avoid a crate dependency and keep the release binary small.
+fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    let mut chunks = input.chunks_exact(3);
+    for c in &mut chunks {
+        let n = ((c[0] as u32) << 16) | ((c[1] as u32) << 8) | (c[2] as u32);
+        out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
+        out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
+        out.push(ALPHABET[((n >> 6) & 0x3f) as usize] as char);
+        out.push(ALPHABET[(n & 0x3f) as usize] as char);
+    }
+    let rem = chunks.remainder();
+    match rem.len() {
+        0 => {}
+        1 => {
+            let n = (rem[0] as u32) << 16;
+            out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
+            out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
+            out.push('=');
+            out.push('=');
+        }
+        2 => {
+            let n = ((rem[0] as u32) << 16) | ((rem[1] as u32) << 8);
+            out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
+            out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
+            out.push(ALPHABET[((n >> 6) & 0x3f) as usize] as char);
+            out.push('=');
+        }
+        _ => unreachable!(),
+    }
+    out
 }
 
 /// Set per-script globals. Call after bootstrap, before executing a user script.

@@ -44,6 +44,11 @@ pub struct Cli {
     #[arg(short = 's', long = "standalone")]
     pub standalone: bool,
 
+    /// Embed images and stylesheets as data URIs / inline blocks
+    /// (implies --standalone)
+    #[arg(long = "embed-resources")]
+    pub embed_resources: bool,
+
     /// List input formats and exit
     #[arg(long = "list-input-formats")]
     pub list_input_formats: bool,
@@ -112,7 +117,8 @@ pub fn run() -> Result<(), Error> {
         output_file: cli.output,
         lua_filters: cli.lua_filter,
         data_dir: cli.data_dir,
-        standalone: cli.standalone,
+        standalone: cli.standalone || cli.embed_resources,
+        embed_resources: cli.embed_resources,
         metadata: parse_kv(&cli.metadata),
         variables: parse_kv(&cli.variable),
         template,

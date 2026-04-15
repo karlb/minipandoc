@@ -13,6 +13,9 @@ local Blocks = {}
 local Inlines = {}
 
 local footnotes = {}
+-- Set by Writer() at entry so Inlines.Image (which doesn't receive opts)
+-- can see the --embed-resources flag.
+local embed_resources = false
 
 local function escape_text(s)
   s = tostring(s or "")
@@ -148,8 +151,19 @@ Inlines.Link = function(el)
 end
 
 Inlines.Image = function(el)
+  local src = el.src or ""
+  if embed_resources and src ~= ""
+     and not src:match("^data:")
+     and not src:match("^https?://") then
+    local mime, data = pandoc.mediabag.fetch(src)
+    if mime and data then
+      src = "data:" .. mime .. ";base64,"
+            .. pandoc._internal.base64_encode(data)
+    end
+    -- on failure: fall back silently to the original src
+  end
   local alt = escape_attr(stringify(el.caption))
-  local attrs = { ' src="' .. escape_attr(el.src or "") .. '"',
+  local attrs = { ' src="' .. escape_attr(src) .. '"',
                   ' alt="' .. alt .. '"' }
   if el.title and el.title ~= "" then
     attrs[#attrs+1] = ' title="' .. escape_attr(el.title) .. '"'
@@ -437,11 +451,30 @@ local function build_template_context(doc, opts, body)
   if not ctx.pagetitle and ctx.title then
     ctx.pagetitle = ctx.title
   end
+  -- Under --embed-resources, inline referenced stylesheets as <style> blocks
+  -- via header-includes and suppress the default template's $for(css)$ loop.
+  if opts and opts.embed_resources and ctx.css then
+    local paths = ctx.css
+    if type(paths) ~= "table" then paths = { tostring(paths) } end
+    local hi = ctx["header-includes"]
+    if type(hi) ~= "table" then
+      hi = hi and { tostring(hi) } or {}
+    end
+    for _, path in ipairs(paths) do
+      local _, data = pandoc.mediabag.fetch(tostring(path))
+      if data then
+        hi[#hi+1] = "<style>\n" .. data .. "\n</style>"
+      end
+    end
+    ctx["header-includes"] = hi
+    ctx.css = {}
+  end
   return ctx
 end
 
 function Writer(doc, opts)
   footnotes = {}
+  embed_resources = opts and opts.embed_resources or false
   local body = blocks(doc.blocks or {}, blankline)
   local notes = render_footnotes()
   local out = layout.render(concat{ body, notes })
