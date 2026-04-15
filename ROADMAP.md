@@ -69,7 +69,9 @@ mostly independent.
   `pandoc._internal.base64_encode(bytes)`. Local paths only;
   `<script src>`, `<video>/<audio>/<source>`, `<embed>`, `<iframe>`,
   and recursive `url(...)` rewriting inside inlined CSS remain future
-  work (the HTML writer doesn't emit the former constructs yet).
+  work (the HTML writer doesn't emit the former constructs yet). See
+  [`notes/embed-resources-url-fetching.md`](notes/embed-resources-url-fetching.md)
+  for why URL fetching was deferred.
 
 ## Medium-term
 
