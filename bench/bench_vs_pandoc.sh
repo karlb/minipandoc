@@ -80,7 +80,7 @@ current_size=0
 while (( current_size < INPUT_SIZE )); do
     sed "s/^\\(#\\+.*\\)/\\1 ($i)/" "$block_file" >> "$input_file"
     current_size=$(wc -c < "$input_file")
-    ((i++))
+    i=$(( i + 1 ))
 done
 
 actual_size=$(wc -c < "$input_file")
