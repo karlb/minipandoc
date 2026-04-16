@@ -1254,10 +1254,8 @@ read_block = function(state, outer_stop)
       return pandoc.RawBlock("html", raw_input:sub(t.start, t.stop))
     end
     -- Walk forward to find matching close, include verbatim source.
-    local save = state.pos
-    state.pos = save  -- (no change; leaving for clarity)
     local depth = 1
-    local j = save
+    local j = state.pos
     while j <= #state.tokens and depth > 0 do
       local tt = state.tokens[j]
       if tt.kind == "open" and tt.name == name and not tt.self_closing then

@@ -121,6 +121,8 @@ pub fn run() -> Result<(), Error> {
         embed_resources: cli.embed_resources,
         metadata: parse_kv(&cli.metadata),
         variables: parse_kv(&cli.variable),
+        columns: cli.columns,
+        wrap: cli.wrap,
         template,
     };
     pipeline::run(&cfg)

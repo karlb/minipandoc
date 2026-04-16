@@ -2,126 +2,10 @@ use mlua::{Lua, Table, Value};
 
 use crate::format::FormatRegistry;
 use crate::options::{ReaderOptions, WriterOptions};
-use crate::pipeline::Error;
 
 const PANDOC_MODULE_LUA: &str = include_str!("../../scripts/pandoc_module.lua");
 const LAYOUT_LUA: &str = include_str!("../../scripts/layout.lua");
 const TEMPLATE_LUA: &str = include_str!("../../scripts/template.lua");
-
-pub struct LuaEngine {
-    pub lua: Lua,
-}
-
-impl LuaEngine {
-    pub fn new() -> Result<Self, Error> {
-        let lua = Lua::new();
-        // Load the pandoc module and stash it as a global.
-        let chunk = lua.load(PANDOC_MODULE_LUA).set_name("pandoc_module.lua");
-        let pandoc: Table = chunk.eval()?;
-        lua.globals().set("pandoc", pandoc)?;
-        // PANDOC_VERSION
-        lua.globals()
-            .set("PANDOC_VERSION", crate::PANDOC_VERSION)?;
-        // Empty writer/reader options until a pipeline sets them
-        lua.globals().set(
-            "PANDOC_READER_OPTIONS",
-            lua.create_table()?,
-        )?;
-        lua.globals().set(
-            "PANDOC_WRITER_OPTIONS",
-            lua.create_table()?,
-        )?;
-        Ok(Self { lua })
-    }
-
-    /// Return the `pandoc` global table.
-    pub fn pandoc_module(&self) -> Result<Table, Error> {
-        Ok(self.lua.globals().get::<Table>("pandoc")?)
-    }
-
-    /// Install `pandoc.read` and `pandoc.write`, which invoke the pipeline
-    /// recursively.
-    pub fn install_recursive_io(&self, registry: FormatRegistry) -> Result<(), Error> {
-        let pandoc = self.pandoc_module()?;
-        let registry_read = registry.clone();
-        let registry_write = registry;
-
-        let read_fn = self.lua.create_function(
-            move |lua, (text, format): (String, Option<String>)| {
-                let format = format.unwrap_or_else(|| "markdown".to_string());
-                let (base, exts) = crate::format::parse_extensions(&format);
-                let script = registry_read.load_reader(&base).map_err(to_lua_err)?;
-                let sub = Lua::new();
-                crate::lua::bootstrap(&sub, &registry_read)?;
-                crate::lua::set_globals(
-                    &sub,
-                    Some(&base),
-                    &ReaderOptions { extensions: exts, ..Default::default() },
-                    &WriterOptions::default(),
-                    script.path.as_deref(),
-                )?;
-                sub.load(&script.source).set_name(&script.name).exec()?;
-                let reader: mlua::Function = sub
-                    .globals()
-                    .get::<Value>("Reader")
-                    .ok()
-                    .and_then(|v| if let Value::Function(f) = v { Some(f) } else { None })
-                    .or_else(|| {
-                        sub.globals()
-                            .get::<Value>("ByteStringReader")
-                            .ok()
-                            .and_then(|v| if let Value::Function(f) = v { Some(f) } else { None })
-                    })
-                    .ok_or_else(|| {
-                        mlua::Error::RuntimeError(format!(
-                            "reader script {} defines neither Reader nor ByteStringReader",
-                            &base
-                        ))
-                    })?;
-                let opts = sub.globals().get::<Value>("PANDOC_READER_OPTIONS")?;
-                let doc: Value = reader.call((text, opts))?;
-                crate::lua::clone_value(lua, &sub, doc)
-            },
-        )?;
-        pandoc.set("read", read_fn)?;
-
-        let write_fn = self.lua.create_function(
-            move |lua, (doc, format): (Value, Option<String>)| {
-                let format = format.unwrap_or_else(|| "html".to_string());
-                let (base, exts) = crate::format::parse_extensions(&format);
-                let script = registry_write.load_writer(&base).map_err(to_lua_err)?;
-                let sub = Lua::new();
-                crate::lua::bootstrap(&sub, &registry_write)?;
-                crate::lua::set_globals(
-                    &sub,
-                    Some(&base),
-                    &ReaderOptions::default(),
-                    &WriterOptions { extensions: exts, ..Default::default() },
-                    script.path.as_deref(),
-                )?;
-                sub.load(&script.source).set_name(&script.name).exec()?;
-                let writer: mlua::Function = sub
-                    .globals()
-                    .get::<Value>("Writer")
-                    .ok()
-                    .and_then(|v| if let Value::Function(f) = v { Some(f) } else { None })
-                    .ok_or_else(|| {
-                        mlua::Error::RuntimeError(format!(
-                            "writer script {} defines no Writer function",
-                            &base
-                        ))
-                    })?;
-                let migrated = crate::lua::clone_value(&sub, lua, doc)?;
-                let opts = sub.globals().get::<Value>("PANDOC_WRITER_OPTIONS")?;
-                let out: String = writer.call((migrated, opts))?;
-                Ok(out)
-            },
-        )?;
-        pandoc.set("write", write_fn)?;
-
-        Ok(())
-    }
-}
 
 fn to_lua_err(e: impl std::fmt::Display) -> mlua::Error {
     mlua::Error::RuntimeError(e.to_string())
@@ -256,12 +140,12 @@ pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error
 
 /// Guess MIME type from a file path's extension. Used by
 /// `pandoc.mediabag.fetch` to label embedded resources.
-fn guess_mime(path: &str) -> String {
+fn guess_mime(path: &str) -> &'static str {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_ascii_lowercase());
-    let s = match ext.as_deref() {
+    match ext.as_deref() {
         Some("png") => "image/png",
         Some("jpg") | Some("jpeg") => "image/jpeg",
         Some("gif") => "image/gif",
@@ -276,8 +160,7 @@ fn guess_mime(path: &str) -> String {
         Some("html") | Some("htm") => "text/html",
         Some("txt") => "text/plain",
         _ => "application/octet-stream",
-    };
-    s.to_string()
+    }
 }
 
 /// Standard base64 encoder (RFC 4648, alphabet `A-Za-z0-9+/`, `=` padding).
@@ -340,7 +223,7 @@ pub fn set_globals(
     Ok(())
 }
 
-fn get_fn(lua: &Lua, name: &str) -> Option<mlua::Function> {
+pub(crate) fn get_fn(lua: &Lua, name: &str) -> Option<mlua::Function> {
     match lua.globals().get::<Value>(name).ok()? {
         Value::Function(f) => Some(f),
         _ => None,

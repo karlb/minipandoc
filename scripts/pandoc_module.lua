@@ -991,12 +991,6 @@ function pandoc.utils.normalize_date(s) return s end
 -- pandoc.path stubs (minimal, enough for most scripts)
 -- ---------------------------------------------------------------------------
 
-local function split_path(p)
-  local parts = {}
-  for seg in string.gmatch(p or "", "[^/]+") do parts[#parts+1] = seg end
-  return parts
-end
-
 function pandoc.path.directory(p)
   p = p or ""
   local i = p:find("/[^/]*$")

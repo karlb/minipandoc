@@ -54,17 +54,20 @@ impl FormatRegistry {
     }
 
     pub fn load_script(&self, name: &str, kind: ScriptKind) -> Result<Script, Error> {
-        // If `name` is a path to an existing file, load directly.
-        let as_path = PathBuf::from(name);
-        if as_path.is_file() {
-            let source = std::fs::read_to_string(&as_path)
-                .map_err(|e| Error::Io(format!("{}: {e}", as_path.display())))?;
-            return Ok(Script {
-                name: as_path.display().to_string(),
-                source,
-                path: Some(as_path.display().to_string()),
-            });
+        // If `name` looks like a file path, try loading it directly.
+        if name.contains('/') || name.contains('.') {
+            let as_path = PathBuf::from(name);
+            if as_path.is_file() {
+                let source = std::fs::read_to_string(&as_path)
+                    .map_err(|e| Error::Io(format!("{}: {e}", as_path.display())))?;
+                return Ok(Script {
+                    name: as_path.display().to_string(),
+                    source,
+                    path: Some(as_path.display().to_string()),
+                });
+            }
         }
+        // Check data dirs for user-provided scripts (override builtins).
         let subdir = match kind {
             ScriptKind::Reader => "readers",
             ScriptKind::Writer => "writers",
@@ -180,8 +183,6 @@ const HTML_WRITER: &str = include_str!("../scripts/writers/html.lua");
 const PLAIN_WRITER: &str = include_str!("../scripts/writers/plain.lua");
 const MARKDOWN_WRITER: &str = include_str!("../scripts/writers/markdown.lua");
 const LATEX_WRITER: &str = include_str!("../scripts/writers/latex.lua");
-
-pub const TEMPLATE_LUA: &str = include_str!("../scripts/template.lua");
 
 const DEFAULT_HTML_TEMPLATE: &str = include_str!("../scripts/templates/default.html");
 const DEFAULT_PLAIN_TEMPLATE: &str = include_str!("../scripts/templates/default.plain");

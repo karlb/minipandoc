@@ -5,9 +5,10 @@ use mlua::{Lua, Value};
 use thiserror::Error;
 
 use crate::format::{parse_extensions, FormatRegistry};
+use crate::lua::get_fn;
 
 fn resolve_format_arg(arg: &str) -> (String, BTreeMap<String, bool>) {
-    if std::path::Path::new(arg).is_file() {
+    if (arg.contains('/') || arg.contains('.')) && std::path::Path::new(arg).is_file() {
         return (arg.to_string(), BTreeMap::new());
     }
     parse_extensions(arg)
@@ -50,11 +51,12 @@ pub struct Config {
     pub embed_resources: bool,
     pub metadata: Vec<(String, String)>,
     pub variables: Vec<(String, String)>,
+    pub columns: i64,
+    pub wrap: String,
     pub template: Option<String>,
 }
 
 pub fn run(cfg: &Config) -> Result<(), Error> {
-    // Read input
     let input = read_input(&cfg.input_files)?;
     let registry = FormatRegistry::new(cfg.data_dir.clone());
 
@@ -65,13 +67,13 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
     let reader_opts = ReaderOptions {
         extensions: from_exts,
         standalone: cfg.standalone,
-        columns: 72,
+        columns: cfg.columns,
     };
     let mut writer_opts = WriterOptions {
         extensions: to_exts,
         standalone: cfg.standalone,
-        columns: 72,
-        wrap: "auto".to_string(),
+        columns: cfg.columns,
+        wrap: cfg.wrap.clone(),
         template: cfg.template.clone(),
         embed_resources: cfg.embed_resources,
         ..Default::default()
@@ -101,9 +103,8 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
         let pandoc: mlua::Table = lua.globals().get("pandoc")?;
         pandoc.set("_cli_metadata", kv_table(&lua, &cfg.metadata)?)?;
     }
-    // Run reader
-    let reader_fn = globals_fn(&lua, "Reader")
-        .or_else(|| globals_fn(&lua, "ByteStringReader"))
+    let reader_fn = get_fn(&lua, "Reader")
+        .or_else(|| get_fn(&lua, "ByteStringReader"))
         .ok_or_else(|| {
             Error::Other(format!(
                 "reader {} defines neither Reader nor ByteStringReader",
@@ -131,14 +132,11 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
         }
     }
 
-    // Apply filters in order
     for filter_path in &cfg.lua_filters {
-        doc = apply_filter(&lua, filter_path, doc, &from_base)?;
+        doc = apply_filter(&lua, filter_path, doc)?;
     }
 
-    // Load writer (in the same state is fine; writers are independent code)
     let writer_script = registry.load_writer(&to_base)?;
-    // Update globals for writer
     set_globals(
         &lua,
         Some(&to_base),
@@ -149,7 +147,7 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
     lua.load(&writer_script.source)
         .set_name(&writer_script.name)
         .exec()?;
-    let writer_fn = globals_fn(&lua, "Writer").ok_or_else(|| {
+    let writer_fn = get_fn(&lua, "Writer").ok_or_else(|| {
         Error::Other(format!("writer {} defines no Writer function", to_base))
     })?;
     let wopts_t = lua.globals().get::<Value>("PANDOC_WRITER_OPTIONS")?;
@@ -159,7 +157,6 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
         out.push('\n');
     }
 
-    // Write output
     match &cfg.output_file {
         Some(p) => std::fs::write(p, out)?,
         None => {
@@ -189,12 +186,6 @@ fn read_input(files: &[PathBuf]) -> Result<String, Error> {
     Ok(buf)
 }
 
-fn globals_fn(lua: &Lua, name: &str) -> Option<mlua::Function> {
-    match lua.globals().get::<Value>(name).ok()? {
-        Value::Function(f) => Some(f),
-        _ => None,
-    }
-}
 
 fn kv_table(lua: &Lua, kv: &[(String, String)]) -> Result<mlua::Table, mlua::Error> {
     let t = lua.create_table()?;
@@ -208,7 +199,6 @@ fn apply_filter(
     lua: &Lua,
     filter_path: &std::path::Path,
     doc: Value,
-    from_format: &str,
 ) -> Result<Value, Error> {
     let src = std::fs::read_to_string(filter_path)?;
     let chunk_name = filter_path.display().to_string();
@@ -251,7 +241,7 @@ fn apply_filter(
 
     let mut current = doc;
     for ft in filters {
-        current = walk_with(lua, current, ft, from_format)?;
+        current = walk_with(lua, current, ft)?;
     }
     Ok(current)
 }
@@ -295,7 +285,6 @@ fn walk_with(
     lua: &Lua,
     doc: Value,
     filter: mlua::Table,
-    _from_format: &str,
 ) -> Result<Value, Error> {
     // Call doc:walk(filter) if doc is a Pandoc-shaped table with a walk method.
     if let Value::Table(ref dt) = doc {
