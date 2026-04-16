@@ -9,16 +9,10 @@
 //! If `pandoc` is not on PATH, semantic-parity checks are skipped with a
 //! note; the minipandoc-only self-roundtrip idempotence check still runs.
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
 
 fn fixtures_dir() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -28,7 +22,7 @@ fn fixtures_dir() -> PathBuf {
 }
 
 fn run_minipandoc(input: &std::path::Path) -> String {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .args(["-f", "native", "-t", "native"])
         .arg(input)
         .stderr(Stdio::inherit())
@@ -67,20 +61,10 @@ fn run_pandoc_native(input: &str) -> Option<String> {
     String::from_utf8(out.stdout).ok()
 }
 
-fn pandoc_available() -> bool {
-    Command::new("pandoc")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 #[test]
 fn roundtrip_all_fixtures() {
     let dir = fixtures_dir();
-    let has_pandoc = pandoc_available();
+    let has_pandoc = common::pandoc_available();
     if !has_pandoc {
         eprintln!("note: pandoc not on PATH — skipping semantic-parity checks");
     }

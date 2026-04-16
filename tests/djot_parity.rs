@@ -8,17 +8,11 @@
 //!
 //! Skips gracefully when pandoc is absent.
 
+mod common;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
 
 fn vendor_dir() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -32,18 +26,8 @@ fn fixtures_dir() -> PathBuf {
     p
 }
 
-fn pandoc_available() -> bool {
-    Command::new("pandoc")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 fn run_minipandoc(args: &[&str], input_path: Option<&Path>) -> String {
-    let mut cmd = Command::new(binary_path());
+    let mut cmd = Command::new(common::binary_path());
     cmd.args(args);
     if let Some(p) = input_path {
         cmd.arg(p);
@@ -108,7 +92,7 @@ fn fixtures() -> Vec<PathBuf> {
 
 #[test]
 fn reader_semantic_parity() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping djot reader parity test");
         return;
     }
@@ -133,7 +117,7 @@ fn reader_semantic_parity() {
 
 #[test]
 fn writer_byte_parity() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping djot writer parity test");
         return;
     }
@@ -162,7 +146,7 @@ fn writer_byte_parity() {
 
 #[test]
 fn djot_appears_in_list_formats() {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .arg("--list-input-formats")
         .output()
         .expect("spawn");
@@ -173,7 +157,7 @@ fn djot_appears_in_list_formats() {
         "expected 'djot' in input formats: {text}"
     );
 
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .arg("--list-output-formats")
         .output()
         .expect("spawn");

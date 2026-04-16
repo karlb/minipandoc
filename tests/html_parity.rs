@@ -12,16 +12,10 @@
 //!
 //! Skips gracefully when pandoc is absent.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
 
 fn fixtures_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -29,18 +23,8 @@ fn fixtures_root() -> PathBuf {
     p
 }
 
-fn pandoc_available() -> bool {
-    Command::new("pandoc")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 fn run_minipandoc(args: &[&str], input_path: &Path) -> String {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .args(args)
         .arg(input_path)
         .stderr(Stdio::inherit())
@@ -120,7 +104,7 @@ fn is_smoke_only(path: &Path) -> bool {
 
 #[test]
 fn round_trip_semantic_parity() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping HTML round-trip parity test");
         return;
     }
@@ -183,7 +167,7 @@ fn round_trip_semantic_parity() {
 
 #[test]
 fn html_appears_in_list_formats() {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .arg("--list-output-formats")
         .output()
         .expect("spawn minipandoc");
@@ -197,7 +181,7 @@ fn html_appears_in_list_formats() {
 
 #[test]
 fn standalone_wraps_in_html5_shell() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping standalone smoke test");
         return;
     }

@@ -1,31 +1,15 @@
 //! Filter parity test: a simple Lua filter (uppercase Str text) applied via
 //! `-L`. Output must equal pandoc's output for the same filter.
 
+mod common;
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
-
-fn pandoc_available() -> bool {
-    Command::new("pandoc")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 #[test]
 fn upper_filter_parity_with_pandoc() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping filter parity test");
         return;
     }
@@ -48,7 +32,7 @@ end
         p
     };
 
-    let mp = Command::new(binary_path())
+    let mp = Command::new(common::binary_path())
         .args(["-f", "native", "-t", "native", "-L"])
         .arg(&filter_path)
         .arg(&fixture)

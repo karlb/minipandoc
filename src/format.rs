@@ -11,7 +11,7 @@ pub struct Script {
     pub path: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScriptKind {
     Reader,
     Writer,
@@ -115,7 +115,7 @@ impl FormatRegistry {
 
     pub fn list_formats(&self, kind: ScriptKind) -> Vec<String> {
         let mut out = BTreeSet::new();
-        for b in builtin_names(kind.clone()) {
+        for b in builtin_names(kind) {
             out.insert(b.to_string());
         }
         let subdir = match kind {

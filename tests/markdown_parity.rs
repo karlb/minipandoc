@@ -11,16 +11,10 @@
 //! These are all lossless through pandoc's markdown reader, just not
 //! byte-identical to pandoc's writer.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
 
 fn fixtures_dir() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -28,18 +22,8 @@ fn fixtures_dir() -> PathBuf {
     p
 }
 
-fn pandoc_available() -> bool {
-    Command::new("pandoc")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 fn run_minipandoc(args: &[&str], input_path: &Path) -> String {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .args(args)
         .arg(input_path)
         .stderr(Stdio::inherit())
@@ -119,7 +103,7 @@ fn is_smoke_only(p: &Path) -> bool {
 
 #[test]
 fn markdown_byte_parity() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping markdown parity test");
         return;
     }
@@ -153,7 +137,7 @@ fn markdown_byte_parity() {
 /// markdown reader accepts (round-trips to a parseable native AST).
 #[test]
 fn markdown_smoke_roundtrips() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping smoke-roundtrip test");
         return;
     }
@@ -199,7 +183,7 @@ fn markdown_smoke_roundtrips() {
 
 #[test]
 fn markdown_appears_in_list_formats() {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .arg("--list-output-formats")
         .output()
         .expect("spawn minipandoc");

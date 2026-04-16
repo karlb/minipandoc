@@ -9,16 +9,10 @@
 //! complex grid tables where matching pandoc's exact column-width
 //! algorithm isn't worthwhile.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
 
 fn fixtures_dir() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -26,18 +20,8 @@ fn fixtures_dir() -> PathBuf {
     p
 }
 
-fn pandoc_available() -> bool {
-    Command::new("pandoc")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 fn run_minipandoc(args: &[&str], input_path: &Path) -> String {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .args(args)
         .arg(input_path)
         .stderr(Stdio::inherit())
@@ -88,7 +72,7 @@ fn is_smoke_only(p: &Path) -> bool {
 
 #[test]
 fn plain_byte_parity() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping plain parity test");
         return;
     }
@@ -120,7 +104,7 @@ fn plain_byte_parity() {
 
 #[test]
 fn plain_appears_in_list_formats() {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .arg("--list-output-formats")
         .output()
         .expect("spawn minipandoc");

@@ -1,16 +1,10 @@
 //! EPUB writer integration tests.
 
+mod common;
+
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
 
 fn fixtures_dir() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -20,7 +14,7 @@ fn fixtures_dir() -> PathBuf {
 
 fn run_epub(fixture: &str, extra_args: &[&str]) -> Vec<u8> {
     let input = fixtures_dir().join(fixture);
-    let mut cmd = Command::new(binary_path());
+    let mut cmd = Command::new(common::binary_path());
     cmd.args(["-f", "native", "-t", "epub"]);
     cmd.args(extra_args);
     cmd.arg(&input);

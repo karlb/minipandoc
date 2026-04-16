@@ -1,20 +1,14 @@
 //! CLI surface tests: list formats, stdin/stdout, -o file output, -M/-V flags.
 
+mod common;
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
-
 #[test]
 fn list_input_formats_includes_native() {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .arg("--list-input-formats")
         .output()
         .expect("spawn");
@@ -28,7 +22,7 @@ fn list_input_formats_includes_native() {
 
 #[test]
 fn list_output_formats_includes_native() {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .arg("--list-output-formats")
         .output()
         .expect("spawn");
@@ -40,7 +34,7 @@ fn list_output_formats_includes_native() {
 #[test]
 fn stdin_to_stdout() {
     let input = "[Para [Str \"hi\"]]\n";
-    let mut child = Command::new(binary_path())
+    let mut child = Command::new(common::binary_path())
         .args(["-f", "native", "-t", "native"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -75,7 +69,7 @@ fn output_file_flag() {
         "mp-cli-out-{}.native",
         std::process::id()
     ));
-    let status = Command::new(binary_path())
+    let status = Command::new(common::binary_path())
         .args(["-f", "native", "-t", "native", "-o"])
         .arg(&out_path)
         .arg(&input_path)
@@ -104,7 +98,7 @@ end
         .write_all(writer_src.as_bytes())
         .unwrap();
 
-    let mut child = Command::new(binary_path())
+    let mut child = Command::new(common::binary_path())
         .args(["-f", "native", "-t"])
         .arg(&writer)
         .stdin(Stdio::piped())

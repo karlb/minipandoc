@@ -16,16 +16,10 @@
 //!
 //! Skips pandoc-dependent tests gracefully when pandoc is absent.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
 
 fn fixtures_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -33,19 +27,9 @@ fn fixtures_root() -> PathBuf {
     p
 }
 
-fn pandoc_available() -> bool {
-    Command::new("pandoc")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 fn run_minipandoc(args: &[&str], input_path: Option<&Path>, stdin_bytes: Option<&[u8]>) -> String {
     use std::io::Write;
-    let mut cmd = Command::new(binary_path());
+    let mut cmd = Command::new(common::binary_path());
     cmd.args(args);
     if let Some(p) = input_path {
         cmd.arg(p);
@@ -128,7 +112,7 @@ fn is_smoke_only_self(path: &Path) -> bool {
 
 #[test]
 fn self_round_trip() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping HTML reader self-round-trip");
         return;
     }
@@ -197,7 +181,7 @@ fn html_fixtures() -> Vec<PathBuf> {
 
 #[test]
 fn reader_parity_with_pandoc() {
-    if !pandoc_available() {
+    if !common::pandoc_available() {
         eprintln!("note: pandoc not on PATH — skipping HTML reader pandoc-parity test");
         return;
     }
@@ -267,7 +251,7 @@ fn meta_extraction_smoke() {
 
 #[test]
 fn html_appears_in_list_input_formats() {
-    let out = Command::new(binary_path())
+    let out = Command::new(common::binary_path())
         .arg("--list-input-formats")
         .output()
         .expect("spawn minipandoc");

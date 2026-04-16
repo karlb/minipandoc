@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::PathBuf;
 
 use mlua::{Lua, Value};
 use thiserror::Error;
 
 use crate::format::{parse_extensions, FormatRegistry};
-use crate::lua::get_fn;
+use crate::lua::{bootstrap, get_fn, set_globals};
+use crate::options::{ReaderOptions, WriterOptions};
 
 fn resolve_format_arg(arg: &str) -> (String, BTreeMap<String, bool>) {
     if (arg.contains('/') || arg.contains('.')) && std::path::Path::new(arg).is_file() {
@@ -13,8 +15,6 @@ fn resolve_format_arg(arg: &str) -> (String, BTreeMap<String, bool>) {
     }
     parse_extensions(arg)
 }
-use crate::lua::{bootstrap, set_globals};
-use crate::options::{ReaderOptions, WriterOptions};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -82,10 +82,7 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
         writer_opts.variables.insert(k.clone(), v.clone());
     }
 
-    // Load reader script
     let reader_script = registry.load_reader(&from_base)?;
-
-    // Create Lua state for the reader.
     let lua = Lua::new();
     bootstrap(&lua, &registry)?;
     set_globals(
@@ -159,7 +156,6 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
                 Some(p) => std::fs::write(p, &*bytes)
                     .map_err(|e| Error::Io(format!("{}: {e}", p.display())))?,
                 None => {
-                    use std::io::Write;
                     std::io::stdout().lock().write_all(&bytes)?;
                 }
             }
@@ -174,7 +170,6 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
                 Some(p) => std::fs::write(p, out)
                     .map_err(|e| Error::Io(format!("{}: {e}", p.display())))?,
                 None => {
-                    use std::io::Write;
                     std::io::stdout().lock().write_all(out.as_bytes())?;
                 }
             }
@@ -207,7 +202,6 @@ fn read_input(files: &[PathBuf]) -> Result<String, Error> {
     }
     Ok(buf)
 }
-
 
 fn kv_table(lua: &Lua, kv: &[(String, String)]) -> Result<mlua::Table, mlua::Error> {
     let t = lua.create_table()?;

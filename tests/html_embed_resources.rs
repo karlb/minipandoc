@@ -4,17 +4,11 @@
 //! and referenced stylesheets as `<style>` blocks, and that the flag implies
 //! `--standalone`. These tests do not depend on a real pandoc being on PATH.
 
+mod common;
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
 
 fn unique_tmpdir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -34,7 +28,7 @@ fn run_minipandoc_in(
     args: &[&str],
     stdin_bytes: &[u8],
 ) -> (bool, String, String) {
-    let mut child = Command::new(binary_path())
+    let mut child = Command::new(common::binary_path())
         .args(args)
         .current_dir(dir)
         .stdin(Stdio::piped())

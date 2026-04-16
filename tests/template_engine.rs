@@ -6,16 +6,10 @@
 //! directives, and a unit test that exercises `pandoc.template.apply`
 //! through a Lua filter.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("minipandoc");
-    p
-}
 
 fn fixtures() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -24,7 +18,7 @@ fn fixtures() -> PathBuf {
 }
 
 fn run_minipandoc(args: &[&str], input: Option<&Path>) -> String {
-    let mut cmd = Command::new(binary_path());
+    let mut cmd = Command::new(common::binary_path());
     cmd.args(args);
     if let Some(p) = input {
         cmd.arg(p);
