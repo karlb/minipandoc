@@ -147,22 +147,43 @@ pub fn run(cfg: &Config) -> Result<(), Error> {
     lua.load(&writer_script.source)
         .set_name(&writer_script.name)
         .exec()?;
-    let writer_fn = get_fn(&lua, "Writer").ok_or_else(|| {
-        Error::Other(format!("writer {} defines no Writer function", to_base))
-    })?;
+    let byte_writer_fn = get_fn(&lua, "ByteStringWriter");
+    let text_writer_fn = get_fn(&lua, "Writer");
     let wopts_t = lua.globals().get::<Value>("PANDOC_WRITER_OPTIONS")?;
-    let mut out: String = writer_fn.call((doc, wopts_t))?;
-    // Mimic pandoc: terminate output with a single trailing newline.
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
 
-    match &cfg.output_file {
-        Some(p) => std::fs::write(p, out)?,
-        None => {
-            use std::io::Write;
-            let mut stdout = std::io::stdout().lock();
-            stdout.write_all(out.as_bytes())?;
+    match (byte_writer_fn, text_writer_fn) {
+        (Some(bw), _) => {
+            let out: mlua::String = bw.call((doc, wopts_t))?;
+            let bytes = out.as_bytes();
+            match &cfg.output_file {
+                Some(p) => std::fs::write(p, &*bytes)
+                    .map_err(|e| Error::Io(format!("{}: {e}", p.display())))?,
+                None => {
+                    use std::io::Write;
+                    std::io::stdout().lock().write_all(&bytes)?;
+                }
+            }
+        }
+        (_, Some(tw)) => {
+            let mut out: String = tw.call((doc, wopts_t))?;
+            // Mimic pandoc: terminate output with a single trailing newline.
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            match &cfg.output_file {
+                Some(p) => std::fs::write(p, out)
+                    .map_err(|e| Error::Io(format!("{}: {e}", p.display())))?,
+                None => {
+                    use std::io::Write;
+                    std::io::stdout().lock().write_all(out.as_bytes())?;
+                }
+            }
+        }
+        _ => {
+            return Err(Error::Other(format!(
+                "writer {} defines neither Writer nor ByteStringWriter",
+                to_base
+            )));
         }
     }
     Ok(())
