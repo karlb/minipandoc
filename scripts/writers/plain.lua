@@ -288,7 +288,7 @@ Blocks.HorizontalRule = function()
   return literal(string.rep("-", cols))
 end
 
-local function bullet_marker() return "-   " end
+local function bullet_marker() return "- " end
 
 local function ordered_marker(i, start, style, delim)
   local n = (start or 1) + i - 1

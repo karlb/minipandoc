@@ -112,42 +112,22 @@ local function is_list_tag(tag)
   return tag == "BulletList" or tag == "OrderedList"
 end
 
-local function is_raw_fence_block(el)
-  if el.tag ~= "RawBlock" then return false end
-  local fmt = el.format or ""
-  return fmt ~= "markdown" and fmt ~= "tex" and fmt ~= "latex"
-end
-
 local function blocks(bs, sep)
-  local parts = {}
+  local buf = {}
   local prev_tag = nil
-  local prev_was_fence = false
   for _, el in ipairs(bs or {}) do
     local fn = Blocks[el.tag]
     if fn then
-      if #parts > 0 then
-        -- Insert list separator between consecutive same-type lists.
-        if is_list_tag(el.tag) and el.tag == prev_tag then
-          parts[#parts+1] = sep
-          parts[#parts+1] = concat{
-            literal("```{=html}"), cr,
-            literal("<!-- -->"), cr,
-            literal("```"), cr,
-          }
-        elseif prev_was_fence then
-          -- Code-fence raw blocks end with ``` + newline; pandoc doesn't
-          -- add a blank line after them, just a single newline.
-          parts[#parts+1] = cr
-        else
-          parts[#parts+1] = sep
-        end
+      -- Insert an HTML comment separator between consecutive same-type
+      -- lists so pandoc's reader doesn't merge them.
+      if is_list_tag(el.tag) and el.tag == prev_tag then
+        buf[#buf+1] = literal("<!-- -->")
       end
-      parts[#parts+1] = fn(el)
+      buf[#buf+1] = fn(el)
       prev_tag = el.tag
-      prev_was_fence = is_raw_fence_block(el)
     end
   end
-  return concat(parts)
+  return concat(buf, sep)
 end
 
 -- ---------------------------------------------------------------------------
@@ -414,15 +394,14 @@ end
 
 Blocks.RawBlock = function(el)
   local fmt = el.format or ""
-  if fmt == "markdown" or fmt == "tex" or fmt == "latex" then
+  if fmt == "markdown" or fmt == "html" or fmt == "html5" or fmt == "html4"
+     or fmt == "tex" or fmt == "latex" then
     return literal(el.text or "")
   end
   local text = el.text or ""
-  -- Strip a single trailing newline (pandoc's convention for RawBlock text).
-  if text:sub(-1) == "\n" then text = text:sub(1, -2) end
   local fence = codeblock_fence(text)
   return concat{
-    literal(fence .. "{=" .. fmt .. "}"), cr,
+    literal(fence .. " {=" .. fmt .. "}"), cr,
     literal(text), cr,
     literal(fence),
   }
@@ -469,7 +448,7 @@ end
 -- Pandoc pads list markers out to a 4-char cell (for bullet) or to a width
 -- that accommodates the widest marker in an ordered list. Continuation
 -- lines indent by the same width.
-local function bullet_marker_string() return "-   " end
+local function bullet_marker_string() return "- " end
 
 local function list_to_doc(items, marker_for)
   local tight = is_tight_list(items)
@@ -549,19 +528,37 @@ local function div_simple_class(attr)
   return classes[1]
 end
 
+-- Compute the maximum div-fence depth needed for a block list.
+-- Pandoc uses one more colon than any nested div so fences don't collide.
+local function max_div_depth(bs)
+  local d = 0
+  for _, b in ipairs(bs or {}) do
+    if b.tag == "Div" or b.tag == "Figure" then
+      d = math.max(d, 1 + max_div_depth(b.content or {}))
+    end
+  end
+  return d
+end
+
+local function div_fence(el)
+  local depth = 1 + max_div_depth(el.content or {})
+  return string.rep(":", math.max(depth + 2, 3))
+end
+
 Blocks.Div = function(el)
+  local fence = div_fence(el)
   local simple = div_simple_class(el.attr)
   local open
   if simple then
-    open = "::: " .. simple
+    open = fence .. " " .. simple
   else
     local attr_str = render_attr(el.attr)
-    open = attr_str == "" and ":::" or ("::: " .. attr_str)
+    open = attr_str == "" and fence or (fence .. " " .. attr_str)
   end
   return concat{
     literal(open), cr,
     blocks(el.content, blankline), cr,
-    literal(":::"),
+    literal(fence),
   }
 end
 
@@ -597,15 +594,18 @@ Blocks.Figure = function(el)
     return Inlines.Image(img)
   end
   -- Fallback: fenced div tagged with .figure + caption-as-paragraph.
+  -- Use dynamic fence depth to avoid collisions with nested divs.
+  local depth = 1 + max_div_depth(el.content or {})
+  local fence = string.rep(":", math.max(depth + 2, 3))
   local attr_str = render_attr(el.attr)
-  local header = attr_str == "" and "::: figure" or ("::: figure " .. attr_str)
+  local header = attr_str == "" and (fence .. " figure") or (fence .. " figure " .. attr_str)
   local parts = { literal(header), cr, blocks(el.content, blankline) }
   if el.caption and el.caption.long and #el.caption.long > 0 then
     parts[#parts+1] = blankline
     parts[#parts+1] = blocks(el.caption.long, blankline)
   end
   parts[#parts+1] = cr
-  parts[#parts+1] = literal(":::")
+  parts[#parts+1] = literal(fence)
   return concat(parts)
 end
 
