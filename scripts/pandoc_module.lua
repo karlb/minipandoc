@@ -1092,6 +1092,20 @@ function pandoc.system.get_working_directory() return "." end
 -- The host may override this later.
 function pandoc_native_show(_) return "" end
 
+-- Single-pass entity escapes shared by html/epub/xml writers.
+local HTML_TEXT_ESCAPES = { ["&"] = "&amp;", ["<"] = "&lt;", [">"] = "&gt;" }
+local HTML_ATTR_ESCAPES = {
+  ["&"] = "&amp;", ["<"] = "&lt;", [">"] = "&gt;", ['"'] = "&quot;",
+}
+
+local function escape_html(s)
+  return (tostring(s or ""):gsub("[&<>]", HTML_TEXT_ESCAPES))
+end
+
+local function escape_html_attr(s)
+  return (tostring(s or ""):gsub('[&<>"]', HTML_ATTR_ESCAPES))
+end
+
 -- Expose the internal tables so the host can attach additional methods.
 pandoc._internal = {
   List = List,
@@ -1100,6 +1114,8 @@ pandoc._internal = {
   Pandoc = Pandoc,
   INLINE_TAGS = INLINE_TAGS,
   BLOCK_TAGS = BLOCK_TAGS,
+  escape_html = escape_html,
+  escape_html_attr = escape_html_attr,
 }
 
 -- Shared HTML-family escapes. Used by the bundled html and epub writers;

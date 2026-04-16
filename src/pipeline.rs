@@ -280,17 +280,23 @@ fn is_array_of_tables(t: &mlua::Table) -> bool {
 }
 
 fn harvest_global_filter(lua: &Lua) -> Result<mlua::Table, Error> {
-    let keys = [
-        "Str", "Emph", "Strong", "Underline", "Strikeout", "Superscript", "Subscript",
-        "SmallCaps", "Quoted", "Cite", "Code", "Space", "SoftBreak", "LineBreak", "Math",
-        "RawInline", "Link", "Image", "Note", "Span", "Plain", "Para", "LineBlock",
-        "CodeBlock", "RawBlock", "BlockQuote", "OrderedList", "BulletList",
-        "DefinitionList", "Header", "HorizontalRule", "Table", "Figure", "Div", "Meta",
-        "Pandoc", "Inline", "Block", "Inlines", "Blocks",
-    ];
     let t = lua.create_table()?;
     let globals = lua.globals();
-    for k in keys {
+    let internal: mlua::Table = globals
+        .get::<mlua::Table>("pandoc")?
+        .get("_internal")?;
+    let tag_sources: [mlua::Table; 2] =
+        [internal.get("INLINE_TAGS")?, internal.get("BLOCK_TAGS")?];
+    for tags in &tag_sources {
+        for pair in tags.clone().pairs::<String, Value>() {
+            let (k, _) = pair?;
+            if let Ok(Value::Function(f)) = globals.get::<Value>(k.as_str()) {
+                t.set(k, f)?;
+            }
+        }
+    }
+    // Catch-all filter names that aren't element tags.
+    for k in ["Meta", "Pandoc", "Inline", "Block", "Inlines", "Blocks"] {
         if let Ok(Value::Function(f)) = globals.get::<Value>(k) {
             t.set(k, f)?;
         }

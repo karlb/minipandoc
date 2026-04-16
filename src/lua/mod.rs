@@ -16,6 +16,28 @@ fn to_lua_err(e: impl std::fmt::Display) -> mlua::Error {
     mlua::Error::RuntimeError(e.to_string())
 }
 
+/// Build a fresh Lua state for a nested pandoc.read/pandoc.write call:
+/// bootstrap pandoc, seed per-script globals, and load the format script.
+fn new_sub_state(
+    registry: &FormatRegistry,
+    script: &crate::format::Script,
+    format: &str,
+    reader_opts: &ReaderOptions,
+    writer_opts: &WriterOptions,
+) -> Result<Lua, mlua::Error> {
+    let sub = Lua::new();
+    bootstrap(&sub, registry)?;
+    set_globals(
+        &sub,
+        Some(format),
+        reader_opts,
+        writer_opts,
+        script.path.as_deref(),
+    )?;
+    sub.load(&script.source).set_name(&script.name).exec()?;
+    Ok(sub)
+}
+
 /// Initialize a fresh Lua state with the pandoc module loaded.
 pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error> {
     // Preload lpeg (C module) and re (pure-Lua regex on top of lpeg).
@@ -53,16 +75,13 @@ pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error
             let format = format.unwrap_or_else(|| "markdown".to_string());
             let (base, exts) = crate::format::parse_extensions(&format);
             let script = reg_r.load_reader(&base).map_err(to_lua_err)?;
-            let sub = Lua::new();
-            bootstrap(&sub, &reg_r)?;
-            set_globals(
-                &sub,
-                Some(&base),
+            let sub = new_sub_state(
+                &reg_r,
+                &script,
+                &base,
                 &ReaderOptions { extensions: exts, ..Default::default() },
                 &WriterOptions::default(),
-                script.path.as_deref(),
             )?;
-            sub.load(&script.source).set_name(&script.name).exec()?;
             let reader: mlua::Function = get_fn(&sub, "Reader")
                 .or_else(|| get_fn(&sub, "ByteStringReader"))
                 .ok_or_else(|| {
@@ -82,16 +101,13 @@ pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error
             let format = format.unwrap_or_else(|| "html".to_string());
             let (base, exts) = crate::format::parse_extensions(&format);
             let script = reg_w.load_writer(&base).map_err(to_lua_err)?;
-            let sub = Lua::new();
-            bootstrap(&sub, &reg_w)?;
-            set_globals(
-                &sub,
-                Some(&base),
+            let sub = new_sub_state(
+                &reg_w,
+                &script,
+                &base,
                 &ReaderOptions::default(),
                 &WriterOptions { extensions: exts, ..Default::default() },
-                script.path.as_deref(),
             )?;
-            sub.load(&script.source).set_name(&script.name).exec()?;
             let writer: mlua::Function = get_fn(&sub, "Writer").ok_or_else(|| {
                 mlua::Error::RuntimeError(format!(
                     "writer script {} defines no Writer function",
@@ -177,13 +193,10 @@ pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error
                     };
                     let opts = zip::write::SimpleFileOptions::default()
                         .compression_method(method);
-                    zw.start_file(path.to_str()?, opts)
-                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                    zw.write_all(&data.as_bytes())
-                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                    zw.start_file(path.to_str()?, opts).map_err(to_lua_err)?;
+                    zw.write_all(&data.as_bytes()).map_err(to_lua_err)?;
                 }
-                zw.finish()
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                zw.finish().map_err(to_lua_err)?;
             }
             Ok(lua.create_string(buf.into_inner())?)
         })?,
@@ -285,17 +298,60 @@ pub(crate) fn get_fn(lua: &Lua, name: &str) -> Option<mlua::Function> {
     }
 }
 
+struct MetaTables {
+    pandoc_mt: Table,
+    element_mt: Table,
+    inline_tags: Table,
+    block_tags: Table,
+}
+
+impl MetaTables {
+    fn fetch(dst: &Lua) -> Result<Self, mlua::Error> {
+        let pandoc: Table = dst.globals().get("pandoc")?;
+        let internal: Table = pandoc.get("_internal")?;
+        Ok(Self {
+            pandoc_mt: internal.get("Pandoc")?,
+            element_mt: internal.get("Element")?,
+            inline_tags: internal.get("INLINE_TAGS")?,
+            block_tags: internal.get("BLOCK_TAGS")?,
+        })
+    }
+
+    fn attach(&self, t: &Table, tag: &str) -> Result<(), mlua::Error> {
+        if tag == "Pandoc" {
+            let _ = t.set_metatable(Some(self.pandoc_mt.clone()));
+            return Ok(());
+        }
+        let is_inline: bool = self.inline_tags.get::<Option<bool>>(tag)?.unwrap_or(false);
+        let is_block: bool = self.block_tags.get::<Option<bool>>(tag)?.unwrap_or(false);
+        if is_inline || is_block {
+            let _ = t.set_metatable(Some(self.element_mt.clone()));
+        }
+        Ok(())
+    }
+}
+
 /// Copy a Lua value from one state to another by serializing through primitive
 /// types. Used when `pandoc.read`/`pandoc.write` runs a format script in a
 /// nested Lua state.
 pub fn clone_value(dst: &Lua, src: &Lua, v: Value) -> Result<Value, mlua::Error> {
+    let mt = MetaTables::fetch(dst)?;
+    clone_value_inner(dst, src, v, &mt)
+}
+
+fn clone_value_inner(
+    dst: &Lua,
+    src: &Lua,
+    v: Value,
+    mt: &MetaTables,
+) -> Result<Value, mlua::Error> {
     match v {
         Value::Nil => Ok(Value::Nil),
         Value::Boolean(b) => Ok(Value::Boolean(b)),
         Value::Integer(i) => Ok(Value::Integer(i)),
         Value::Number(n) => Ok(Value::Number(n)),
         Value::String(s) => Ok(Value::String(dst.create_string(&s.as_bytes())?)),
-        Value::Table(t) => clone_table(dst, src, t).map(Value::Table),
+        Value::Table(t) => clone_table(dst, src, t, mt).map(Value::Table),
         Value::Function(_) | Value::UserData(_) | Value::Thread(_) | Value::LightUserData(_)
         | Value::Error(_) | Value::Other(_) => {
             // Unsupported across states — return nil. Cross-state filter values
@@ -305,41 +361,18 @@ pub fn clone_value(dst: &Lua, src: &Lua, v: Value) -> Result<Value, mlua::Error>
     }
 }
 
-fn clone_table(dst: &Lua, src: &Lua, t: Table) -> Result<Table, mlua::Error> {
+fn clone_table(dst: &Lua, src: &Lua, t: Table, mt: &MetaTables) -> Result<Table, mlua::Error> {
     let out = dst.create_table()?;
     for pair in t.clone().pairs::<Value, Value>() {
         let (k, v) = pair?;
-        let k2 = clone_value(dst, src, k)?;
-        let v2 = clone_value(dst, src, v)?;
+        let k2 = clone_value_inner(dst, src, k, mt)?;
+        let v2 = clone_value_inner(dst, src, v, mt)?;
         out.set(k2, v2)?;
     }
-    // Preserve metatable tag if this looks like an AST element.
     if let Ok(Value::String(tag)) = t.get::<Value>("tag") {
-        let tag_str = tag.to_string_lossy();
-        attach_meta_by_tag(dst, &out, &tag_str)?;
+        mt.attach(&out, &tag.to_string_lossy())?;
     }
     Ok(out)
-}
-
-fn attach_meta_by_tag(dst: &Lua, t: &Table, tag: &str) -> Result<(), mlua::Error> {
-    let pandoc: Table = dst.globals().get("pandoc")?;
-    let internal: Table = pandoc.get("_internal")?;
-    // For Pandoc top-level, use the Pandoc metatable.
-    if tag == "Pandoc" {
-        let mt: Table = internal.get("Pandoc")?;
-        let _ = t.set_metatable(Some(mt));
-        return Ok(());
-    }
-    // Element metatable covers Block/Inline.
-    let inline_tags: Table = internal.get("INLINE_TAGS")?;
-    let block_tags: Table = internal.get("BLOCK_TAGS")?;
-    let is_inline: bool = inline_tags.get::<Option<bool>>(tag)?.unwrap_or(false);
-    let is_block: bool = block_tags.get::<Option<bool>>(tag)?.unwrap_or(false);
-    if is_inline || is_block {
-        let mt: Table = internal.get("Element")?;
-        let _ = t.set_metatable(Some(mt));
-    }
-    Ok(())
 }
 
 #[cfg(test)]
