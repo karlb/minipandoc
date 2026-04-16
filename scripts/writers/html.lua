@@ -34,6 +34,29 @@ local function escape_attr(s)
   return s
 end
 
+-- Standard HTML attributes that should NOT get a data- prefix.
+local STANDARD_ATTRS = {}
+for _, a in ipairs{
+  "accesskey","charset","class","contenteditable","dir","draggable",
+  "height","hidden","href","hreflang","id","lang","rel","role",
+  "src","style","tabindex","title","translate","type","width",
+  "alt","cols","colspan","headers","rows","rowspan","scope","span",
+  "start","value","wrap","action","method","name","placeholder",
+  "required","disabled","checked","selected","readonly","multiple",
+  "max","min","step","pattern","size","maxlength","minlength",
+  "autofocus","autocomplete","novalidate","target","download",
+  "media","crossorigin","integrity","loading","decoding","sizes",
+  "srcset","usemap","ismap","shape","coords","sandbox","allow",
+  "allowfullscreen","frameborder","referrerpolicy","cite","datetime",
+  "open","reversed","border","cellpadding","cellspacing","summary",
+  "abbr","axis","bgcolor","color","face","noshade","nowrap","valign",
+  "controls","autoplay","loop","muted","preload","poster","kind",
+  "label","srclang","default","for","form","list","accept",
+  "enctype","formaction","formmethod","formtarget","formnovalidate",
+  "inputmode","is","slot","part","enterkeyhint","inert",
+  "popover","popovertarget","popovertargetaction",
+} do STANDARD_ATTRS[a] = true end
+
 local function render_attrs(attr)
   if not attr then return "" end
   local buf = {}
@@ -47,7 +70,14 @@ local function render_attrs(attr)
   end
   if attr.attributes then
     for _, pair in ipairs(attr.attributes) do
-      buf[#buf+1] = ' ' .. pair[1] .. '="' .. escape_attr(pair[2]) .. '"'
+      local k = pair[1]
+      -- Prefix non-standard attributes with data- (unless already prefixed).
+      if not STANDARD_ATTRS[k]
+         and not k:match("^data%-")
+         and not k:match("^aria%-") then
+        k = "data-" .. k
+      end
+      buf[#buf+1] = ' ' .. k .. '="' .. escape_attr(pair[2]) .. '"'
     end
   end
   return table.concat(buf)
@@ -76,8 +106,8 @@ end
 -- ---------------------------------------------------------------------------
 
 Inlines.Str = function(el) return literal(escape_text(el.text)) end
-Inlines.Space = function() return literal(" ") end
-Inlines.SoftBreak = function() return cr end
+Inlines.Space = function() return layout.space end
+Inlines.SoftBreak = function() return layout.space end
 Inlines.LineBreak = function() return concat{ literal("<br />"), cr } end
 
 local function wrap_tag(name)
@@ -123,9 +153,9 @@ end
 
 Inlines.Math = function(el)
   if el.mathtype == "DisplayMath" then
-    return concat{ literal('<span class="math display">\\['),
+    return concat{ literal('<span class="math display">$$'),
                    literal(escape_text(el.text)),
-                   literal("\\]</span>") }
+                   literal("$$</span>") }
   else
     return concat{ literal('<span class="math inline">\\('),
                    literal(escape_text(el.text)),
@@ -300,13 +330,35 @@ local function attr_without_class(attr, drop_class)
 end
 
 Blocks.Div = function(el)
-  -- Emit <section> for Divs with "section" class so pandoc's HTML reader
-  -- reconstructs them as section-Divs on round-trip.
-  if has_class(el.attr, "section") then
-    local trimmed = attr_without_class(el.attr, "section")
-    return concat{ literal("<section" .. render_attrs(trimmed) .. ">"), cr,
-                   blocks(el.content, cr), cr,
-                   literal("</section>") }
+  -- Section Div: hoist Div's ID onto the first child Header and emit
+  -- children directly (no wrapping <section> or <div>). This matches
+  -- pandoc 3.x which puts the section ID on the <hN> tag.
+  if has_class(el.attr, "section") and el.attr.identifier and el.attr.identifier ~= "" then
+    local content_blocks = el.content or {}
+    if #content_blocks > 0 and content_blocks[1].tag == "Header" then
+      local hdr = content_blocks[1]
+      local hdr_attr = hdr.attr or {}
+      -- Only hoist if the header doesn't already have its own ID.
+      if not hdr_attr.identifier or hdr_attr.identifier == "" then
+        local new_attr = {
+          identifier = el.attr.identifier,
+          classes = hdr_attr.classes or {},
+          attributes = hdr_attr.attributes or {},
+        }
+        local tag = "h" .. tostring(hdr.level)
+        local parts = {
+          concat{ literal("<" .. tag .. render_attrs(new_attr) .. ">"),
+                  inlines(hdr.content), literal("</" .. tag .. ">") },
+        }
+        for i = 2, #content_blocks do
+          local fn = Blocks[content_blocks[i].tag]
+          if fn then parts[#parts+1] = fn(content_blocks[i]) end
+        end
+        return concat(parts, cr)
+      end
+    end
+    -- Fallback: render children directly without wrapper.
+    return blocks(content_blocks, cr)
   end
   return concat{ literal("<div" .. render_attrs(el.attr) .. ">"), cr,
                  blocks(el.content, cr), cr,
@@ -477,7 +529,7 @@ function Writer(doc, opts)
   embed_resources = opts and opts.embed_resources or false
   local body = blocks(doc.blocks or {}, blankline)
   local notes = render_footnotes()
-  local out = layout.render(concat{ body, notes })
+  local out = layout.render(concat{ body, notes }, 72)
   if opts and opts.standalone then
     local tpl_src = (opts and opts.template ~= "" and opts.template)
                     or pandoc.template.default(FORMAT or "html")
