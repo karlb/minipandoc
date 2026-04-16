@@ -125,14 +125,10 @@ for fmt in djot html plain markdown latex; do
 
     if diff -q "$mp_out" "$pd_out" &>/dev/null; then
         matched+=("$fmt")
-        echo "djot -> $fmt: output matches"
+        echo "  djot -> $fmt: output matches"
     else
         skipped+=("$fmt")
-        # Show a brief summary of differences
-        diff_lines=$(diff "$mp_out" "$pd_out" | head -20 | wc -l)
-        echo "djot -> $fmt: OUTPUT DIFFERS (skipping benchmark; $diff_lines diff lines shown below)"
-        diff "$mp_out" "$pd_out" | head -6 || true
-        echo ""
+        echo "  djot -> $fmt: output differs (skipping)"
     fi
 done
 echo ""
