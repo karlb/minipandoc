@@ -85,6 +85,18 @@ mostly independent.
   WASI artifact, so pandoc Lua filters keep working unmodified. Still
   open: a markdown reader (success signal #3's final piece) and a
   packaged npm distribution.
+- **`--embed-resources`** — HTML writer inlines referenced `<img src>`
+  attributes as `data:<mime>;base64,…` URIs and rewrites the default
+  template's `$for(css)$<link>` loop into inline `<style>` blocks via
+  `header-includes`. Implies `--standalone`. Rust adds two primitives
+  exposed to Lua: `pandoc.mediabag.fetch(source)` (local files only;
+  URLs and `data:` sources return `nil, err`) and
+  `pandoc._internal.base64_encode(bytes)`. Local paths only;
+  `<script src>`, `<video>/<audio>/<source>`, `<embed>`, `<iframe>`,
+  and recursive `url(...)` rewriting inside inlined CSS remain future
+  work (the HTML writer doesn't emit the former constructs yet). See
+  [`notes/embed-resources-url-fetching.md`](notes/embed-resources-url-fetching.md)
+  for why URL fetching was deferred.
 
 ## Medium-term
 
@@ -126,7 +138,6 @@ Citation processing is a major sub-project. Defer until there's demand.
 
 ### Extended compatibility
 
-- `--embed-resources`
 - YAML metadata parsing
 - Syntax highlighting (integrate a Lua library or expose `syntect`)
 - PDF output via external engines
