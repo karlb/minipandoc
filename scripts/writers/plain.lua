@@ -120,14 +120,68 @@ end
 
 Inlines.Code = function(el) return literal(el.text or "") end
 
--- Basic TeX→Unicode for super/subscript in math: ^N, ^{group}, _N, _{group}
+-- Common TeX commands → Unicode (subset matching pandoc's texmath).
+local TEX_COMMANDS = {
+  ["\\sum"]="∑", ["\\prod"]="∏", ["\\int"]="∫",
+  ["\\infty"]="∞", ["\\partial"]="∂", ["\\nabla"]="∇",
+  ["\\pm"]="±", ["\\mp"]="∓", ["\\times"]="×", ["\\div"]="÷",
+  ["\\cdot"]="⋅", ["\\cdots"]="⋯", ["\\ldots"]="…",
+  ["\\leq"]="≤", ["\\le"]="≤", ["\\geq"]="≥", ["\\ge"]="≥",
+  ["\\neq"]="≠", ["\\ne"]="≠", ["\\approx"]="≈", ["\\equiv"]="≡",
+  ["\\subset"]="⊂", ["\\supset"]="⊃", ["\\subseteq"]="⊆", ["\\supseteq"]="⊇",
+  ["\\in"]="∈", ["\\notin"]="∉", ["\\cup"]="∪", ["\\cap"]="∩",
+  ["\\emptyset"]="∅", ["\\forall"]="∀", ["\\exists"]="∃",
+  ["\\neg"]="¬", ["\\land"]="∧", ["\\lor"]="∨",
+  ["\\to"]="→", ["\\rightarrow"]="→", ["\\leftarrow"]="←",
+  ["\\Rightarrow"]="⇒", ["\\Leftarrow"]="⇐", ["\\iff"]="⟺",
+  ["\\alpha"]="α", ["\\beta"]="β", ["\\gamma"]="γ", ["\\delta"]="δ",
+  ["\\epsilon"]="ϵ", ["\\varepsilon"]="ε", ["\\zeta"]="ζ",
+  ["\\eta"]="η", ["\\theta"]="θ", ["\\iota"]="ι", ["\\kappa"]="κ",
+  ["\\lambda"]="λ", ["\\mu"]="μ", ["\\nu"]="ν", ["\\xi"]="ξ",
+  ["\\pi"]="π", ["\\rho"]="ρ", ["\\sigma"]="σ", ["\\tau"]="τ",
+  ["\\upsilon"]="υ", ["\\phi"]="ϕ", ["\\varphi"]="φ", ["\\chi"]="χ",
+  ["\\psi"]="ψ", ["\\omega"]="ω",
+  ["\\Gamma"]="Γ", ["\\Delta"]="Δ", ["\\Theta"]="Θ", ["\\Lambda"]="Λ",
+  ["\\Xi"]="Ξ", ["\\Pi"]="Π", ["\\Sigma"]="Σ", ["\\Phi"]="Φ",
+  ["\\Psi"]="Ψ", ["\\Omega"]="Ω",
+  ["\\sqrt"]="√", ["\\langle"]="⟨", ["\\rangle"]="⟩",
+  ["\\|"]="‖", ["\\quad"]=" ", ["\\qquad"]="  ", ["\\,"]=" ",
+  ["\\;"]=" ", ["\\!"]="",
+}
+
+-- Basic TeX→Unicode for math: ^N/^{group}, _N/_{group}, \command.
 local function tex_to_unicode(text)
   local out = {}
   local i = 1
   local len = #text
   while i <= len do
     local ch = text:sub(i, i)
-    if (ch == "^" or ch == "_") and i < len then
+    if ch == "\\" and i < len then
+      -- Try matching a TeX command: \name
+      local cmd = text:match("^(\\[a-zA-Z]+)", i)
+      if cmd then
+        local u = TEX_COMMANDS[cmd]
+        if u then
+          out[#out+1] = u
+          i = i + #cmd
+        else
+          -- Unknown command: skip the backslash and command name
+          out[#out+1] = cmd:sub(2)
+          i = i + #cmd
+        end
+      else
+        -- Single-char escape: \{ \} etc.
+        local esc = text:sub(i, i+1)
+        local u = TEX_COMMANDS[esc]
+        if u then
+          out[#out+1] = u
+          i = i + 2
+        else
+          out[#out+1] = text:sub(i+1, i+1)
+          i = i + 2
+        end
+      end
+    elseif (ch == "^" or ch == "_") and i < len then
       local map = (ch == "^") and super_map or sub_map
       local next_ch = text:sub(i+1, i+1)
       if next_ch == "{" then
@@ -167,7 +221,7 @@ end
 Inlines.Math = function(el)
   local text = el.text or ""
   if el.mathtype == "DisplayMath" then
-    return concat{ cr, literal("$$" .. text .. "$$") }
+    return concat{ cr, literal(tex_to_unicode(text)) }
   end
   return literal(tex_to_unicode(text))
 end

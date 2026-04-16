@@ -200,7 +200,8 @@ end
 
 Inlines.RawInline = function(el)
   local fmt = el.format or ""
-  if fmt == "markdown" or fmt == "tex" or fmt == "latex" then
+  if fmt == "markdown" or fmt == "html" or fmt == "html5" or fmt == "html4"
+     or fmt == "tex" or fmt == "latex" then
     return literal(el.text or "")
   end
   -- Other raw formats use pandoc's raw-attribute syntax: `text`{=fmt}
@@ -515,13 +516,56 @@ local function div_simple_class(attr)
   return classes[1]
 end
 
+local function has_class(attr, name)
+  if not attr or not attr.classes then return false end
+  for _, c in ipairs(attr.classes) do
+    if c == name then return true end
+  end
+  return false
+end
+
 Blocks.Div = function(el)
-  local simple = div_simple_class(el.attr)
+  local attr = el.attr
+  local id = attr and attr.identifier and attr.identifier ~= "" and attr.identifier
+
+  -- Section Div: unwrap and hoist the Div's ID onto the first child Header,
+  -- matching pandoc's markdown writer which doesn't emit section fences.
+  if has_class(attr, "section") then
+    local content_blocks = el.content or {}
+    if id and #content_blocks > 0 and content_blocks[1].tag == "Header" then
+      local hdr = content_blocks[1]
+      local hdr_attr = hdr.attr or {}
+      -- Hoist div's ID to the header if the header lacks its own ID.
+      if not hdr_attr.identifier or hdr_attr.identifier == "" then
+        local modified_hdr = {
+          tag = "Header",
+          level = hdr.level,
+          content = hdr.content,
+          attr = { identifier = id, classes = hdr_attr.classes or {},
+                   attributes = hdr_attr.attributes or {} },
+        }
+        -- Render remaining blocks through blocks() so list separators etc.
+        -- are inserted properly.
+        local rest = {}
+        for i = 2, #content_blocks do rest[#rest+1] = content_blocks[i] end
+        local parts = { Blocks.Header(modified_hdr) }
+        if #rest > 0 then
+          parts[#parts+1] = blocks(rest, blankline)
+        end
+        return concat(parts, blankline)
+      end
+    end
+    -- Section div but no ID to hoist (or header already has one): just
+    -- render children directly without a fenced wrapper.
+    return blocks(content_blocks, blankline)
+  end
+
+  local simple = div_simple_class(attr)
   local open
   if simple then
     open = "::: " .. simple
   else
-    local attr_str = render_attr(el.attr)
+    local attr_str = render_attr(attr)
     open = attr_str == "" and ":::" or ("::: " .. attr_str)
   end
   return concat{
