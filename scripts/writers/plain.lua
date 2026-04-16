@@ -17,10 +17,16 @@ local Inlines = {}
 local footnotes = {}
 
 local function inlines(ils)
+  ils = ils or {}
   local buf = {}
-  for _, el in ipairs(ils or {}) do
-    local fn = Inlines[el.tag]
-    if fn then buf[#buf+1] = fn(el) end
+  for i, el in ipairs(ils) do
+    if el.tag == "Str" and (el.text or ""):sub(-1) == "!"
+       and ils[i+1] and ils[i+1].tag == "Link" then
+      buf[#buf+1] = literal((el.text):sub(1, -2) .. "\\!")
+    else
+      local fn = Inlines[el.tag]
+      if fn then buf[#buf+1] = fn(el) end
+    end
   end
   return concat(buf)
 end
@@ -39,7 +45,7 @@ end
 -- ---------------------------------------------------------------------------
 
 Inlines.Str = function(el) return literal(el.text or "") end
-Inlines.Space = function() return literal(" ") end
+Inlines.Space = function() return layout.space end
 Inlines.SoftBreak = function() return layout.space end
 Inlines.LineBreak = function() return cr end
 
@@ -55,11 +61,46 @@ Inlines.Strikeout = function(el)
   return concat{ literal("~~"), inlines(el.content), literal("~~") }
 end
 
+-- Unicode super/subscript mappings (matches pandoc's texmath coverage).
+local super_map = {
+  ["0"]="⁰",["1"]="¹",["2"]="²",["3"]="³",["4"]="⁴",
+  ["5"]="⁵",["6"]="⁶",["7"]="⁷",["8"]="⁸",["9"]="⁹",
+  ["+"]="⁺",["-"]="⁻",["="]="⁼",["("]="⁽",[")"]="⁾",
+  ["n"]="ⁿ",["i"]="ⁱ",
+}
+local sub_map = {
+  ["0"]="₀",["1"]="₁",["2"]="₂",["3"]="₃",["4"]="₄",
+  ["5"]="₅",["6"]="₆",["7"]="₇",["8"]="₈",["9"]="₉",
+  ["+"]="₊",["-"]="₋",["="]="₌",["("]="₍",[")"]="₎",
+  ["a"]="ₐ",["e"]="ₑ",["h"]="ₕ",["i"]="ᵢ",["j"]="ⱼ",
+  ["k"]="ₖ",["l"]="ₗ",["m"]="ₘ",["n"]="ₙ",["o"]="ₒ",
+  ["p"]="ₚ",["r"]="ᵣ",["s"]="ₛ",["t"]="ₜ",["u"]="ᵤ",
+  ["v"]="ᵥ",["x"]="ₓ",
+}
+
+local function try_unicode_script(text, map)
+  local out = {}
+  -- Iterate over UTF-8 characters
+  for p, c in utf8.codes(text) do
+    local ch = utf8.char(c)
+    local m = map[ch]
+    if not m then return nil end
+    out[#out+1] = m
+  end
+  return table.concat(out)
+end
+
 Inlines.Subscript = function(el)
+  local s = stringify(el.content)
+  local u = try_unicode_script(s, sub_map)
+  if u then return literal(u) end
   return concat{ literal("_("), inlines(el.content), literal(")") }
 end
 
 Inlines.Superscript = function(el)
+  local s = stringify(el.content)
+  local u = try_unicode_script(s, super_map)
+  if u then return literal(u) end
   return concat{ literal("^("), inlines(el.content), literal(")") }
 end
 
@@ -79,14 +120,118 @@ end
 
 Inlines.Code = function(el) return literal(el.text or "") end
 
-Inlines.Math = function(el)
-  -- Pandoc converts TeX math to Unicode (texmath). We can't replicate
-  -- that without a math engine, so emit the raw source. Display math
-  -- gets surrounding line breaks.
-  if el.mathtype == "DisplayMath" then
-    return concat{ cr, literal(el.text or ""), cr }
+-- Math spacing characters matching pandoc's texmath.
+local THIN_SPACE = "\xe2\x80\x85"  -- U+2005 FOUR-PER-EM SPACE
+local MED_SPACE  = "\xe2\x80\x84"  -- U+2004 THREE-PER-EM SPACE
+
+-- Common TeX commands → Unicode (subset matching pandoc's texmath).
+local TEX_COMMANDS = {
+  ["\\sum"]="∑", ["\\prod"]="∏", ["\\int"]="∫",
+  ["\\infty"]="∞", ["\\partial"]="∂", ["\\nabla"]="∇",
+  ["\\pm"]="±", ["\\mp"]="∓", ["\\times"]="×", ["\\div"]="÷",
+  ["\\cdot"]="⋅", ["\\cdots"]="⋯", ["\\ldots"]="…",
+  ["\\leq"]="≤", ["\\le"]="≤", ["\\geq"]="≥", ["\\ge"]="≥",
+  ["\\neq"]="≠", ["\\ne"]="≠", ["\\approx"]="≈", ["\\equiv"]="≡",
+  ["\\subset"]="⊂", ["\\supset"]="⊃", ["\\subseteq"]="⊆", ["\\supseteq"]="⊇",
+  ["\\in"]="∈", ["\\notin"]="∉", ["\\cup"]="∪", ["\\cap"]="∩",
+  ["\\emptyset"]="∅", ["\\forall"]="∀", ["\\exists"]="∃",
+  ["\\neg"]="¬", ["\\land"]="∧", ["\\lor"]="∨",
+  ["\\to"]="→", ["\\rightarrow"]="→", ["\\leftarrow"]="←",
+  ["\\Rightarrow"]="⇒", ["\\Leftarrow"]="⇐", ["\\iff"]="⟺",
+  ["\\alpha"]="α", ["\\beta"]="β", ["\\gamma"]="γ", ["\\delta"]="δ",
+  ["\\epsilon"]="ϵ", ["\\varepsilon"]="ε", ["\\zeta"]="ζ",
+  ["\\eta"]="η", ["\\theta"]="θ", ["\\iota"]="ι", ["\\kappa"]="κ",
+  ["\\lambda"]="λ", ["\\mu"]="μ", ["\\nu"]="ν", ["\\xi"]="ξ",
+  ["\\pi"]="π", ["\\rho"]="ρ", ["\\sigma"]="σ", ["\\tau"]="τ",
+  ["\\upsilon"]="υ", ["\\phi"]="ϕ", ["\\varphi"]="φ", ["\\chi"]="χ",
+  ["\\psi"]="ψ", ["\\omega"]="ω",
+  ["\\Gamma"]="Γ", ["\\Delta"]="Δ", ["\\Theta"]="Θ", ["\\Lambda"]="Λ",
+  ["\\Xi"]="Ξ", ["\\Pi"]="Π", ["\\Sigma"]="Σ", ["\\Phi"]="Φ",
+  ["\\Psi"]="Ψ", ["\\Omega"]="Ω",
+  ["\\sqrt"]="√", ["\\langle"]="⟨", ["\\rangle"]="⟩",
+  ["\\|"]="‖", ["\\quad"]=" ", ["\\qquad"]="  ", ["\\,"]=" ",
+  ["\\;"]=" ", ["\\!"]="",
+}
+
+-- Basic TeX→Unicode for math: ^N/^{group}, _N/_{group}, \command.
+local function tex_to_unicode(text)
+  local out = {}
+  local i = 1
+  local len = #text
+  while i <= len do
+    local ch = text:sub(i, i)
+    if ch == "\\" and i < len then
+      -- Try matching a TeX command: \name
+      local cmd = text:match("^(\\[a-zA-Z]+)", i)
+      if cmd then
+        local u = TEX_COMMANDS[cmd]
+        if u then
+          out[#out+1] = u
+          i = i + #cmd
+        else
+          -- Unknown command: skip the backslash and command name
+          out[#out+1] = cmd:sub(2)
+          i = i + #cmd
+        end
+      else
+        -- Single-char escape: \{ \} etc.
+        local esc = text:sub(i, i+1)
+        local u = TEX_COMMANDS[esc]
+        if u then
+          out[#out+1] = u
+          i = i + 2
+        else
+          out[#out+1] = text:sub(i+1, i+1)
+          i = i + 2
+        end
+      end
+    elseif (ch == "^" or ch == "_") and i < len then
+      local map = (ch == "^") and super_map or sub_map
+      local next_ch = text:sub(i+1, i+1)
+      if next_ch == "{" then
+        local close = text:find("}", i+2, true)
+        if close then
+          local group = text:sub(i+2, close-1)
+          local u = try_unicode_script(group, map)
+          if u then
+            out[#out+1] = u
+            i = close + 1
+          else
+            out[#out+1] = ch
+            i = i + 1
+          end
+        else
+          out[#out+1] = ch
+          i = i + 1
+        end
+      else
+        local m = map[next_ch]
+        if m then
+          out[#out+1] = m
+          i = i + 2
+        else
+          out[#out+1] = ch
+          i = i + 1
+        end
+      end
+    else
+      out[#out+1] = ch
+      i = i + 1
+    end
   end
-  return literal(el.text or "")
+  local result = table.concat(out)
+  -- Add math spacing around binary operators (matching pandoc's texmath).
+  result = result:gsub(" *%+ *", THIN_SPACE .. "+" .. THIN_SPACE)
+  result = result:gsub(" *= *", MED_SPACE .. "=" .. MED_SPACE)
+  return result
+end
+
+Inlines.Math = function(el)
+  local text = el.text or ""
+  if el.mathtype == "DisplayMath" then
+    return concat{ cr, literal("$$" .. text .. "$$"), cr }
+  end
+  return literal(tex_to_unicode(text))
 end
 
 Inlines.RawInline = function(el)
@@ -143,7 +288,7 @@ Blocks.HorizontalRule = function()
   return literal(string.rep("-", cols))
 end
 
-local function bullet_marker() return "- " end
+local function bullet_marker() return "-   " end
 
 local function ordered_marker(i, start, style, delim)
   local n = (start or 1) + i - 1
@@ -167,9 +312,9 @@ local function ordered_marker(i, start, style, delim)
   else
     label = tostring(n)
   end
-  if delim == "OneParen" then return label .. ")  "
-  elseif delim == "TwoParens" then return "(" .. label .. ")  "
-  else return label .. ".  " end
+  if delim == "OneParen" then return label .. ")"
+  elseif delim == "TwoParens" then return "(" .. label .. ")"
+  else return label .. "." end
 end
 
 local function is_tight_list(items)
@@ -202,8 +347,17 @@ Blocks.OrderedList = function(el)
   local start = el.start or la.start or 1
   local style = el.style or la.style
   local delim = el.delimiter or la.delimiter
-  return list_to_doc(el.content or {}, function(i)
-    return ordered_marker(i, start, style, delim)
+  local items = el.content or {}
+  -- Compute the widest marker label for uniform padding.
+  local max_len = 0
+  for i = 1, #items do
+    local m = ordered_marker(i, start, style, delim)
+    if #m > max_len then max_len = #m end
+  end
+  local width = math.max(max_len + 1, 4)
+  return list_to_doc(items, function(i)
+    local m = ordered_marker(i, start, style, delim)
+    return m .. string.rep(" ", width - #m)
   end)
 end
 

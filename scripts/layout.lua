@@ -338,13 +338,16 @@ function layout.render(doc, cols)
       end
     elseif t == "cr" then
       -- Conditional newline: only break if there's content on the line.
+      -- Strip trailing space (breakable space before cr is absorbed).
       if line_started or #cur > 0 then
+        cur = cur:gsub(" +$", "")
         push_line()
       end
     elseif t == "bl" then
       -- Blank line: if we have content on current line, push it first.
       -- Then queue a single blank (collapse consecutive blanklines).
       if line_started or #cur > 0 then
+        cur = cur:gsub(" +$", "")
         push_line()
       end
       if blanks_pending < 1 then blanks_pending = 1 end

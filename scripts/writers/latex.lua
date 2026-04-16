@@ -153,13 +153,20 @@ end
 Inlines.Link = function(el)
   local target = el.target or ""
   local content = inlines(el.content)
+  local attr = el.attr
+  local prefix = layout.empty
+  if attr and attr.identifier and attr.identifier ~= "" then
+    prefix = literal("\\protect\\phantomsection\\label{" .. attr.identifier .. "}")
+  end
   -- Internal link (#id) → \hyperlink{id}{text}; external → \href{url}{text}.
   if target:sub(1, 1) == "#" then
     local id = target:sub(2)
-    return concat{ literal("\\protect\\hyperlink{" .. id .. "}{"),
+    return concat{ prefix,
+                   literal("\\protect\\hyperlink{" .. id .. "}{"),
                    content, literal("}") }
   end
-  return concat{ literal("\\href{" .. escape_url(target) .. "}{"),
+  return concat{ prefix,
+                 literal("\\href{" .. escape_url(target) .. "}{"),
                  content, literal("}") }
 end
 
@@ -198,33 +205,15 @@ Inlines.Note = function(el)
   return literal("\\footnote{" .. body .. "}")
 end
 
--- Inline id wrapper: \hypertarget{id}{content}\label{id} (one logical line).
-local function inline_id_wrap(content, attr)
-  if not attr or not attr.identifier or attr.identifier == "" then
-    return content
-  end
-  local id = attr.identifier
-  return concat{
-    literal("\\hypertarget{" .. id .. "}{"), content,
-    literal("}\\label{" .. id .. "}"),
-  }
-end
-
--- Block id wrapper: \hypertarget{id}{%\n content\n}\label{id}.
-local function block_id_wrap(content, attr)
-  if not attr or not attr.identifier or attr.identifier == "" then
-    return content
-  end
-  local id = attr.identifier
-  return concat{
-    literal("\\hypertarget{" .. id .. "}{%"), cr,
-    content, cr,
-    literal("}\\label{" .. id .. "}"),
-  }
-end
-
 Inlines.Span = function(el)
-  return inline_id_wrap(inlines(el.content), el.attr)
+  local content = inlines(el.content)
+  if el.attr and el.attr.identifier and el.attr.identifier ~= "" then
+    return concat{
+      literal("\\protect\\phantomsection\\label{" .. el.attr.identifier .. "}"),
+      content,
+    }
+  end
+  return content
 end
 
 -- ---------------------------------------------------------------------------
@@ -246,7 +235,12 @@ Blocks.Header = function(el)
                        literal("}") }
   local attr = el.attr
   if attr and attr.identifier and attr.identifier ~= "" then
-    return concat{ body, literal("\\label{" .. attr.identifier .. "}") }
+    local id = attr.identifier
+    return concat{
+      literal("\\hypertarget{" .. id .. "}{%"), cr,
+      body, literal("\\label{" .. id .. "}"),
+      literal("}"),
+    }
   end
   return body
 end
@@ -413,8 +407,55 @@ Blocks.DefinitionList = function(el)
   return concat(parts)
 end
 
+local function has_class(attr, name)
+  if not attr or not attr.classes then return false end
+  for _, c in ipairs(attr.classes) do
+    if c == name then return true end
+  end
+  return false
+end
+
 Blocks.Div = function(el)
-  return block_id_wrap(blocks(el.content, blankline), el.attr)
+  local content_blocks = el.content or {}
+  local attr = el.attr
+  local id = attr and attr.identifier and attr.identifier ~= "" and attr.identifier
+
+  if has_class(attr, "section") and id then
+    -- Section Div: hoist the Div's ID as \label onto the first child Header
+    -- (if it lacks its own ID), then render children directly.
+    if #content_blocks > 0 and content_blocks[1].tag == "Header" then
+      local hdr = content_blocks[1]
+      local hdr_attr = hdr.attr
+      if not hdr_attr or not hdr_attr.identifier or hdr_attr.identifier == "" then
+        -- Hoist the div's ID to the header by creating a modified copy
+        local modified_hdr = {
+          tag = "Header",
+          level = hdr.level,
+          content = hdr.content,
+          attr = { identifier = id, classes = hdr_attr and hdr_attr.classes or {},
+                   attributes = hdr_attr and hdr_attr.attributes or {} },
+        }
+        local parts = { Blocks.Header(modified_hdr) }
+        for i = 2, #content_blocks do
+          local fn = Blocks[content_blocks[i].tag]
+          if fn then parts[#parts+1] = fn(content_blocks[i]) end
+        end
+        return concat(parts, blankline)
+      end
+    end
+    -- Section div but header already has an ID: render children directly.
+    return blocks(content_blocks, blankline)
+  end
+
+  -- Non-section Div with ID: emit \phantomsection\label{id} before content.
+  if id then
+    return concat{
+      literal("\\phantomsection\\label{" .. id .. "}"), blankline,
+      blocks(content_blocks, blankline),
+    }
+  end
+
+  return blocks(content_blocks, blankline)
 end
 
 -- --- Figures ------------------------------------------------------------

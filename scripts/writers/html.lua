@@ -34,6 +34,29 @@ local function escape_attr(s)
   return s
 end
 
+-- Standard HTML attributes that should NOT get a data- prefix.
+local STANDARD_ATTRS = {}
+for _, a in ipairs{
+  "accesskey","charset","class","contenteditable","dir","draggable",
+  "height","hidden","href","hreflang","id","lang","rel","role",
+  "src","style","tabindex","title","translate","type","width",
+  "alt","cols","colspan","headers","rows","rowspan","scope","span",
+  "start","value","wrap","action","method","name","placeholder",
+  "required","disabled","checked","selected","readonly","multiple",
+  "max","min","step","pattern","size","maxlength","minlength",
+  "autofocus","autocomplete","novalidate","target","download",
+  "media","crossorigin","integrity","loading","decoding","sizes",
+  "srcset","usemap","ismap","shape","coords","sandbox","allow",
+  "allowfullscreen","frameborder","referrerpolicy","cite","datetime",
+  "open","reversed","border","cellpadding","cellspacing","summary",
+  "abbr","axis","bgcolor","color","face","noshade","nowrap","valign",
+  "controls","autoplay","loop","muted","preload","poster","kind",
+  "label","srclang","default","for","form","list","accept",
+  "enctype","formaction","formmethod","formtarget","formnovalidate",
+  "inputmode","is","slot","part","enterkeyhint","inert",
+  "popover","popovertarget","popovertargetaction",
+} do STANDARD_ATTRS[a] = true end
+
 local function render_attrs(attr)
   if not attr then return "" end
   local buf = {}
@@ -47,7 +70,14 @@ local function render_attrs(attr)
   end
   if attr.attributes then
     for _, pair in ipairs(attr.attributes) do
-      buf[#buf+1] = ' ' .. pair[1] .. '="' .. escape_attr(pair[2]) .. '"'
+      local k = pair[1]
+      -- Prefix non-standard attributes with data- (unless already prefixed).
+      if not STANDARD_ATTRS[k]
+         and not k:match("^data%-")
+         and not k:match("^aria%-") then
+        k = "data-" .. k
+      end
+      buf[#buf+1] = ' ' .. k .. '="' .. escape_attr(pair[2]) .. '"'
     end
   end
   return table.concat(buf)
@@ -123,9 +153,9 @@ end
 
 Inlines.Math = function(el)
   if el.mathtype == "DisplayMath" then
-    return concat{ literal('<span class="math display">\\['),
+    return concat{ literal('<span class="math display">$$'),
                    literal(escape_text(el.text)),
-                   literal("\\]</span>") }
+                   literal("$$</span>") }
   else
     return concat{ literal('<span class="math inline">\\('),
                    literal(escape_text(el.text)),
@@ -477,7 +507,7 @@ function Writer(doc, opts)
   embed_resources = opts and opts.embed_resources or false
   local body = blocks(doc.blocks or {}, blankline)
   local notes = render_footnotes()
-  local out = layout.render(concat{ body, notes })
+  local out = layout.render(concat{ body, notes }, 72)
   if opts and opts.standalone then
     local tpl_src = (opts and opts.template ~= "" and opts.template)
                     or pandoc.template.default(FORMAT or "html")

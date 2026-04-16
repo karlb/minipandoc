@@ -108,13 +108,46 @@ local function inlines(ils)
   return concat(buf)
 end
 
+local function is_list_tag(tag)
+  return tag == "BulletList" or tag == "OrderedList"
+end
+
+local function is_raw_fence_block(el)
+  if el.tag ~= "RawBlock" then return false end
+  local fmt = el.format or ""
+  return fmt ~= "markdown" and fmt ~= "tex" and fmt ~= "latex"
+end
+
 local function blocks(bs, sep)
-  local buf = {}
+  local parts = {}
+  local prev_tag = nil
+  local prev_was_fence = false
   for _, el in ipairs(bs or {}) do
     local fn = Blocks[el.tag]
-    if fn then buf[#buf+1] = fn(el) end
+    if fn then
+      if #parts > 0 then
+        -- Insert list separator between consecutive same-type lists.
+        if is_list_tag(el.tag) and el.tag == prev_tag then
+          parts[#parts+1] = sep
+          parts[#parts+1] = concat{
+            literal("```{=html}"), cr,
+            literal("<!-- -->"), cr,
+            literal("```"), cr,
+          }
+        elseif prev_was_fence then
+          -- Code-fence raw blocks end with ``` + newline; pandoc doesn't
+          -- add a blank line after them, just a single newline.
+          parts[#parts+1] = cr
+        else
+          parts[#parts+1] = sep
+        end
+      end
+      parts[#parts+1] = fn(el)
+      prev_tag = el.tag
+      prev_was_fence = is_raw_fence_block(el)
+    end
   end
-  return concat(buf, sep)
+  return concat(parts)
 end
 
 -- ---------------------------------------------------------------------------
@@ -149,9 +182,9 @@ end
 Inlines.Quoted = function(el)
   local o, c
   if el.quotetype == "DoubleQuote" then
-    o, c = "\226\128\156", "\226\128\157"  -- U+201C, U+201D
+    o, c = '"', '"'
   else
-    o, c = "\226\128\152", "\226\128\153"  -- U+2018, U+2019
+    o, c = "'", "'"
   end
   return concat{ literal(o), inlines(el.content), literal(c) }
 end
@@ -187,8 +220,7 @@ end
 
 Inlines.RawInline = function(el)
   local fmt = el.format or ""
-  if fmt == "markdown" or fmt == "html" or fmt == "html5" or fmt == "html4"
-     or fmt == "tex" or fmt == "latex" then
+  if fmt == "markdown" or fmt == "tex" or fmt == "latex" then
     return literal(el.text or "")
   end
   -- Other raw formats use pandoc's raw-attribute syntax: `text`{=fmt}
@@ -382,14 +414,15 @@ end
 
 Blocks.RawBlock = function(el)
   local fmt = el.format or ""
-  if fmt == "markdown" or fmt == "html" or fmt == "html5" or fmt == "html4"
-     or fmt == "tex" or fmt == "latex" then
+  if fmt == "markdown" or fmt == "tex" or fmt == "latex" then
     return literal(el.text or "")
   end
   local text = el.text or ""
+  -- Strip a single trailing newline (pandoc's convention for RawBlock text).
+  if text:sub(-1) == "\n" then text = text:sub(1, -2) end
   local fence = codeblock_fence(text)
   return concat{
-    literal(fence .. " {=" .. fmt .. "}"), cr,
+    literal(fence .. "{=" .. fmt .. "}"), cr,
     literal(text), cr,
     literal(fence),
   }
@@ -436,7 +469,7 @@ end
 -- Pandoc pads list markers out to a 4-char cell (for bullet) or to a width
 -- that accommodates the widest marker in an ordered list. Continuation
 -- lines indent by the same width.
-local function bullet_marker_string() return "- " end
+local function bullet_marker_string() return "-   " end
 
 local function list_to_doc(items, marker_for)
   local tight = is_tight_list(items)
@@ -445,7 +478,7 @@ local function list_to_doc(items, marker_for)
   for i, item in ipairs(items) do
     local marker = marker_for(i)
     local indent = #marker
-    local body = blocks(item, blankline)
+    local body = blocks(item, sep)
     out[#out+1] = hang(body, indent, literal(marker))
   end
   return concat(out, sep)
@@ -469,7 +502,7 @@ Blocks.OrderedList = function(el)
     local m = ordered_marker(i, start, style, delim)
     if #m > max_len then max_len = #m end
   end
-  local width = math.max(max_len + 2, 4)  -- marker + padding; at least 4
+  local width = math.max(max_len + 1, 4)  -- marker + padding; at least 4
   return list_to_doc(items, function(i)
     local m = ordered_marker(i, start, style, delim)
     return m .. string.rep(" ", width - #m)
@@ -477,6 +510,19 @@ Blocks.OrderedList = function(el)
 end
 
 Blocks.DefinitionList = function(el)
+  -- Detect tight/loose: tight when all definition bodies use Plain, not Para.
+  local function is_tight()
+    for _, item in ipairs(el.content or {}) do
+      for _, d in ipairs(item[2] or {}) do
+        for _, b in ipairs(d) do
+          if b.tag == "Para" then return false end
+        end
+      end
+    end
+    return true
+  end
+  local tight = is_tight()
+  local def_sep = tight and cr or blankline
   local out = {}
   for _, item in ipairs(el.content or {}) do
     local term, defs = item[1], item[2]
@@ -485,20 +531,37 @@ Blocks.DefinitionList = function(el)
       -- Each definition: ":   " on first line, 4-space indent continuation.
       local body = blocks(d, blankline)
       defs_out[#defs_out+1] = hang(body, 4, literal(":   "))
-      if j < #defs then defs_out[#defs_out+1] = blankline end
+      if j < #defs then defs_out[#defs_out+1] = def_sep end
     end
     out[#out+1] = concat{ inlines(term), cr, concat(defs_out) }
   end
   return concat(out, blankline)
 end
 
+-- Return the class name when the attr has exactly one class, no ID, no
+-- key-value attrs; otherwise return nil.
+local function div_simple_class(attr)
+  if not attr then return nil end
+  if attr.identifier and attr.identifier ~= "" then return nil end
+  local classes = attr.classes or {}
+  if #classes ~= 1 then return nil end
+  if attr.attributes and #attr.attributes > 0 then return nil end
+  return classes[1]
+end
+
 Blocks.Div = function(el)
-  local attr_str = render_attr(el.attr)
-  local open = attr_str == "" and "::::" or (":::: " .. attr_str)
+  local simple = div_simple_class(el.attr)
+  local open
+  if simple then
+    open = "::: " .. simple
+  else
+    local attr_str = render_attr(el.attr)
+    open = attr_str == "" and ":::" or ("::: " .. attr_str)
+  end
   return concat{
     literal(open), cr,
     blocks(el.content, blankline), cr,
-    literal("::::"),
+    literal(":::"),
   }
 end
 
@@ -535,14 +598,14 @@ Blocks.Figure = function(el)
   end
   -- Fallback: fenced div tagged with .figure + caption-as-paragraph.
   local attr_str = render_attr(el.attr)
-  local header = attr_str == "" and ":::: figure" or (":::: figure " .. attr_str)
+  local header = attr_str == "" and "::: figure" or ("::: figure " .. attr_str)
   local parts = { literal(header), cr, blocks(el.content, blankline) }
   if el.caption and el.caption.long and #el.caption.long > 0 then
     parts[#parts+1] = blankline
     parts[#parts+1] = blocks(el.caption.long, blankline)
   end
   parts[#parts+1] = cr
-  parts[#parts+1] = literal("::::")
+  parts[#parts+1] = literal(":::")
   return concat(parts)
 end
 

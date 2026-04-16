@@ -69,9 +69,6 @@ fn fixtures() -> Vec<PathBuf> {
 /// writer. For each we still verify the writer runs and its output
 /// round-trips through pandoc's markdown reader (see `smoke_roundtrips`).
 const SMOKE_ONLY: &[&str] = &[
-    // Curly quotes — pandoc's markdown writer emits straight quotes by
-    // default (smart extension on reader side).
-    "quoted.native",
     // Grid table width algorithm differs from pandoc's.
     "complex_table.native",
     // Pandoc escapes a narrower character set than we do; extra `\` in
@@ -86,9 +83,6 @@ const SMOKE_ONLY: &[&str] = &[
     // Figure element is a relatively recent pandoc addition; older pandoc
     // emits the same fixture as "caption\n![img](...)". Mark smoke-only.
     "figure.native",
-    // DefinitionList tight/loose policy, OrderedList LowerAlpha marker
-    // width — minor differences from pandoc's exact spacing.
-    "lists.native",
     // Attribute rendering order and auto-id detection can differ.
     "header_attrs.native",
     // Pandoc uses simple tables (no pipes) for basic tables; we emit
