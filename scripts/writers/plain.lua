@@ -45,7 +45,7 @@ end
 -- ---------------------------------------------------------------------------
 
 Inlines.Str = function(el) return literal(el.text or "") end
-Inlines.Space = function() return literal(" ") end
+Inlines.Space = function() return layout.space end
 Inlines.SoftBreak = function() return layout.space end
 Inlines.LineBreak = function() return cr end
 
@@ -119,6 +119,10 @@ Inlines.Quoted = function(el)
 end
 
 Inlines.Code = function(el) return literal(el.text or "") end
+
+-- Math spacing characters matching pandoc's texmath.
+local THIN_SPACE = "\xe2\x80\x85"  -- U+2005 FOUR-PER-EM SPACE
+local MED_SPACE  = "\xe2\x80\x84"  -- U+2004 THREE-PER-EM SPACE
 
 -- Common TeX commands → Unicode (subset matching pandoc's texmath).
 local TEX_COMMANDS = {
@@ -215,13 +219,17 @@ local function tex_to_unicode(text)
       i = i + 1
     end
   end
-  return table.concat(out)
+  local result = table.concat(out)
+  -- Add math spacing around binary operators (matching pandoc's texmath).
+  result = result:gsub(" *%+ *", THIN_SPACE .. "+" .. THIN_SPACE)
+  result = result:gsub(" *= *", MED_SPACE .. "=" .. MED_SPACE)
+  return result
 end
 
 Inlines.Math = function(el)
   local text = el.text or ""
   if el.mathtype == "DisplayMath" then
-    return concat{ cr, literal(tex_to_unicode(text)) }
+    return concat{ cr, literal("$$" .. text .. "$$"), cr }
   end
   return literal(tex_to_unicode(text))
 end
@@ -280,7 +288,7 @@ Blocks.HorizontalRule = function()
   return literal(string.rep("-", cols))
 end
 
-local function bullet_marker() return "- " end
+local function bullet_marker() return "-   " end
 
 local function ordered_marker(i, start, style, delim)
   local n = (start or 1) + i - 1

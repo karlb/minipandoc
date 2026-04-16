@@ -106,8 +106,8 @@ end
 -- ---------------------------------------------------------------------------
 
 Inlines.Str = function(el) return literal(escape_text(el.text)) end
-Inlines.Space = function() return layout.space end
-Inlines.SoftBreak = function() return layout.space end
+Inlines.Space = function() return literal(" ") end
+Inlines.SoftBreak = function() return cr end
 Inlines.LineBreak = function() return concat{ literal("<br />"), cr } end
 
 local function wrap_tag(name)
@@ -330,35 +330,13 @@ local function attr_without_class(attr, drop_class)
 end
 
 Blocks.Div = function(el)
-  -- Section Div: hoist Div's ID onto the first child Header and emit
-  -- children directly (no wrapping <section> or <div>). This matches
-  -- pandoc 3.x which puts the section ID on the <hN> tag.
-  if has_class(el.attr, "section") and el.attr.identifier and el.attr.identifier ~= "" then
-    local content_blocks = el.content or {}
-    if #content_blocks > 0 and content_blocks[1].tag == "Header" then
-      local hdr = content_blocks[1]
-      local hdr_attr = hdr.attr or {}
-      -- Only hoist if the header doesn't already have its own ID.
-      if not hdr_attr.identifier or hdr_attr.identifier == "" then
-        local new_attr = {
-          identifier = el.attr.identifier,
-          classes = hdr_attr.classes or {},
-          attributes = hdr_attr.attributes or {},
-        }
-        local tag = "h" .. tostring(hdr.level)
-        local parts = {
-          concat{ literal("<" .. tag .. render_attrs(new_attr) .. ">"),
-                  inlines(hdr.content), literal("</" .. tag .. ">") },
-        }
-        for i = 2, #content_blocks do
-          local fn = Blocks[content_blocks[i].tag]
-          if fn then parts[#parts+1] = fn(content_blocks[i]) end
-        end
-        return concat(parts, cr)
-      end
-    end
-    -- Fallback: render children directly without wrapper.
-    return blocks(content_blocks, cr)
+  -- Emit <section> for Divs with "section" class so pandoc's HTML reader
+  -- reconstructs them as section-Divs on round-trip.
+  if has_class(el.attr, "section") then
+    local trimmed = attr_without_class(el.attr, "section")
+    return concat{ literal("<section" .. render_attrs(trimmed) .. ">"), cr,
+                   blocks(el.content, cr), cr,
+                   literal("</section>") }
   end
   return concat{ literal("<div" .. render_attrs(el.attr) .. ">"), cr,
                  blocks(el.content, cr), cr,

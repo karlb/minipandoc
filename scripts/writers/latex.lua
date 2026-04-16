@@ -235,7 +235,12 @@ Blocks.Header = function(el)
                        literal("}") }
   local attr = el.attr
   if attr and attr.identifier and attr.identifier ~= "" then
-    return concat{ body, literal("\\label{" .. attr.identifier .. "}") }
+    local id = attr.identifier
+    return concat{
+      literal("\\hypertarget{" .. id .. "}{%"), cr,
+      body, literal("\\label{" .. id .. "}"),
+      literal("}"),
+    }
   end
   return body
 end

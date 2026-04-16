@@ -85,6 +85,7 @@ const SMOKE_ONLY: &[&str] = &[
     "inlines.native",
     "blocks.native",   // djot/blocks.native — RawBlock html
     // djot/inlines: Quoted + Math + RawInline html
+    "footnotes.native", // Note elements → HTML footnote section; can't reconstruct Notes on round-trip
 ];
 
 fn is_smoke_only(path: &Path) -> bool {

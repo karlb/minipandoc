@@ -112,22 +112,42 @@ local function is_list_tag(tag)
   return tag == "BulletList" or tag == "OrderedList"
 end
 
+local function is_raw_fence_block(el)
+  if el.tag ~= "RawBlock" then return false end
+  local fmt = el.format or ""
+  return fmt ~= "markdown" and fmt ~= "tex" and fmt ~= "latex"
+end
+
 local function blocks(bs, sep)
-  local buf = {}
+  local parts = {}
   local prev_tag = nil
+  local prev_was_fence = false
   for _, el in ipairs(bs or {}) do
     local fn = Blocks[el.tag]
     if fn then
-      -- Insert an HTML comment separator between consecutive lists
-      -- so pandoc's reader doesn't merge them.
-      if is_list_tag(el.tag) and is_list_tag(prev_tag) then
-        buf[#buf+1] = literal("<!-- -->")
+      if #parts > 0 then
+        -- Insert list separator between consecutive same-type lists.
+        if is_list_tag(el.tag) and el.tag == prev_tag then
+          parts[#parts+1] = sep
+          parts[#parts+1] = concat{
+            literal("```{=html}"), cr,
+            literal("<!-- -->"), cr,
+            literal("```"), cr,
+          }
+        elseif prev_was_fence then
+          -- Code-fence raw blocks end with ``` + newline; pandoc doesn't
+          -- add a blank line after them, just a single newline.
+          parts[#parts+1] = cr
+        else
+          parts[#parts+1] = sep
+        end
       end
-      buf[#buf+1] = fn(el)
+      parts[#parts+1] = fn(el)
       prev_tag = el.tag
+      prev_was_fence = is_raw_fence_block(el)
     end
   end
-  return concat(buf, sep)
+  return concat(parts)
 end
 
 -- ---------------------------------------------------------------------------
@@ -200,8 +220,7 @@ end
 
 Inlines.RawInline = function(el)
   local fmt = el.format or ""
-  if fmt == "markdown" or fmt == "html" or fmt == "html5" or fmt == "html4"
-     or fmt == "tex" or fmt == "latex" then
+  if fmt == "markdown" or fmt == "tex" or fmt == "latex" then
     return literal(el.text or "")
   end
   -- Other raw formats use pandoc's raw-attribute syntax: `text`{=fmt}
@@ -395,14 +414,15 @@ end
 
 Blocks.RawBlock = function(el)
   local fmt = el.format or ""
-  if fmt == "markdown" or fmt == "html" or fmt == "html5" or fmt == "html4"
-     or fmt == "tex" or fmt == "latex" then
+  if fmt == "markdown" or fmt == "tex" or fmt == "latex" then
     return literal(el.text or "")
   end
   local text = el.text or ""
+  -- Strip a single trailing newline (pandoc's convention for RawBlock text).
+  if text:sub(-1) == "\n" then text = text:sub(1, -2) end
   local fence = codeblock_fence(text)
   return concat{
-    literal(fence .. " {=" .. fmt .. "}"), cr,
+    literal(fence .. "{=" .. fmt .. "}"), cr,
     literal(text), cr,
     literal(fence),
   }
@@ -449,7 +469,7 @@ end
 -- Pandoc pads list markers out to a 4-char cell (for bullet) or to a width
 -- that accommodates the widest marker in an ordered list. Continuation
 -- lines indent by the same width.
-local function bullet_marker_string() return "- " end
+local function bullet_marker_string() return "-   " end
 
 local function list_to_doc(items, marker_for)
   local tight = is_tight_list(items)
@@ -458,7 +478,7 @@ local function list_to_doc(items, marker_for)
   for i, item in ipairs(items) do
     local marker = marker_for(i)
     local indent = #marker
-    local body = blocks(item, blankline)
+    local body = blocks(item, sep)
     out[#out+1] = hang(body, indent, literal(marker))
   end
   return concat(out, sep)
@@ -490,6 +510,19 @@ Blocks.OrderedList = function(el)
 end
 
 Blocks.DefinitionList = function(el)
+  -- Detect tight/loose: tight when all definition bodies use Plain, not Para.
+  local function is_tight()
+    for _, item in ipairs(el.content or {}) do
+      for _, d in ipairs(item[2] or {}) do
+        for _, b in ipairs(d) do
+          if b.tag == "Para" then return false end
+        end
+      end
+    end
+    return true
+  end
+  local tight = is_tight()
+  local def_sep = tight and cr or blankline
   local out = {}
   for _, item in ipairs(el.content or {}) do
     local term, defs = item[1], item[2]
@@ -498,7 +531,7 @@ Blocks.DefinitionList = function(el)
       -- Each definition: ":   " on first line, 4-space indent continuation.
       local body = blocks(d, blankline)
       defs_out[#defs_out+1] = hang(body, 4, literal(":   "))
-      if j < #defs then defs_out[#defs_out+1] = blankline end
+      if j < #defs then defs_out[#defs_out+1] = def_sep end
     end
     out[#out+1] = concat{ inlines(term), cr, concat(defs_out) }
   end
@@ -516,56 +549,13 @@ local function div_simple_class(attr)
   return classes[1]
 end
 
-local function has_class(attr, name)
-  if not attr or not attr.classes then return false end
-  for _, c in ipairs(attr.classes) do
-    if c == name then return true end
-  end
-  return false
-end
-
 Blocks.Div = function(el)
-  local attr = el.attr
-  local id = attr and attr.identifier and attr.identifier ~= "" and attr.identifier
-
-  -- Section Div: unwrap and hoist the Div's ID onto the first child Header,
-  -- matching pandoc's markdown writer which doesn't emit section fences.
-  if has_class(attr, "section") then
-    local content_blocks = el.content or {}
-    if id and #content_blocks > 0 and content_blocks[1].tag == "Header" then
-      local hdr = content_blocks[1]
-      local hdr_attr = hdr.attr or {}
-      -- Hoist div's ID to the header if the header lacks its own ID.
-      if not hdr_attr.identifier or hdr_attr.identifier == "" then
-        local modified_hdr = {
-          tag = "Header",
-          level = hdr.level,
-          content = hdr.content,
-          attr = { identifier = id, classes = hdr_attr.classes or {},
-                   attributes = hdr_attr.attributes or {} },
-        }
-        -- Render remaining blocks through blocks() so list separators etc.
-        -- are inserted properly.
-        local rest = {}
-        for i = 2, #content_blocks do rest[#rest+1] = content_blocks[i] end
-        local parts = { Blocks.Header(modified_hdr) }
-        if #rest > 0 then
-          parts[#parts+1] = blocks(rest, blankline)
-        end
-        return concat(parts, blankline)
-      end
-    end
-    -- Section div but no ID to hoist (or header already has one): just
-    -- render children directly without a fenced wrapper.
-    return blocks(content_blocks, blankline)
-  end
-
-  local simple = div_simple_class(attr)
+  local simple = div_simple_class(el.attr)
   local open
   if simple then
     open = "::: " .. simple
   else
-    local attr_str = render_attr(attr)
+    local attr_str = render_attr(el.attr)
     open = attr_str == "" and ":::" or ("::: " .. attr_str)
   end
   return concat{
