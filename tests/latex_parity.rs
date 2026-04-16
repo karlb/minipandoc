@@ -114,6 +114,9 @@ const SMOKE_ONLY: &[&str] = &[
     // Mixed inline features — SmallCaps/Math/Quoted all have minor
     // divergences and the fixture combines several.
     "inlines.native",
+    // Pandoc syntax-highlights code blocks that have a language class
+    // (Shaded/Highlighting); we emit \begin{verbatim}.
+    "codeblock.native",
 ];
 
 fn is_smoke_only(p: &Path) -> bool {

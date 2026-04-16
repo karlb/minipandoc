@@ -263,10 +263,36 @@ end
 Blocks.Plain = function(el) return inlines(el.content) end
 Blocks.Para = function(el) return inlines(el.content) end
 
+-- Compute the auto-generated identifier for heading text, matching
+-- pandoc's auto_identifiers algorithm: lowercase, replace spaces with
+-- hyphens, strip non-alnum (except hyphens/underscores/periods), and
+-- remove leading non-letter characters.
+local function auto_identifier(ils)
+  local text = stringify(ils)
+  text = text:lower()
+  text = text:gsub("%s+", "-")
+  text = text:gsub("[^%w%-_%.]", "")
+  text = text:gsub("^[^%a]+", "")
+  if text == "" then text = "section" end
+  return text
+end
+
 Blocks.Header = function(el)
   local level = el.level or 1
   local hashes = string.rep("#", level)
-  local attr_str = render_attr(el.attr)
+  -- Suppress attribute block when the only attribute is the auto-derived id.
+  local attr = el.attr
+  local suppress = false
+  if attr and attr.identifier and attr.identifier ~= "" then
+    local has_classes = attr.classes and #attr.classes > 0
+    local has_kvs = attr.attributes and #attr.attributes > 0
+    if not has_classes and not has_kvs then
+      if attr.identifier == auto_identifier(el.content) then
+        suppress = true
+      end
+    end
+  end
+  local attr_str = suppress and "" or render_attr(attr)
   local parts = { literal(hashes), literal(" "), inlines(el.content) }
   if attr_str ~= "" then
     parts[#parts+1] = literal(" " .. attr_str)
@@ -410,7 +436,7 @@ end
 -- Pandoc pads list markers out to a 4-char cell (for bullet) or to a width
 -- that accommodates the widest marker in an ordered list. Continuation
 -- lines indent by the same width.
-local function bullet_marker_string() return "-   " end
+local function bullet_marker_string() return "- " end
 
 local function list_to_doc(items, marker_for)
   local tight = is_tight_list(items)

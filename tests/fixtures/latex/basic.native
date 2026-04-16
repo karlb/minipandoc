@@ -30,5 +30,5 @@
     ( 1 , Decimal , Period )
     [ [ Plain [ Str "first" ] ] , [ Plain [ Str "second" ] ] ]
 , BlockQuote [ Para [ Str "A" , Space , Str "quote." ] ]
-, CodeBlock ( "" , [ "python" ] , [] ) "print(\"hi\")"
+, CodeBlock ( "" , [] , [] ) "print(\"hi\")"
 ]

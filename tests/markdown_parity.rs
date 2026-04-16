@@ -107,6 +107,9 @@ const SMOKE_ONLY: &[&str] = &[
     "lists.native",
     // Attribute rendering order and auto-id detection can differ.
     "header_attrs.native",
+    // Pandoc uses simple tables (no pipes) for basic tables; we emit
+    // pipe tables which are semantically equivalent but not byte-identical.
+    "table.native",
 ];
 
 fn is_smoke_only(p: &Path) -> bool {

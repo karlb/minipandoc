@@ -129,24 +129,8 @@ Inlines.Cite = function(el)
   return literal("\\cite{" .. table.concat(keys, ",") .. "}")
 end
 
--- \verb needs a delimiter character that doesn't appear in the code.
--- Try a small set of visually-unambiguous punctuation; fall back to
--- \texttt{escaped} if none is free (very unlikely in practice).
-local VERB_DELIMS = { "|", "!", "@", "+", "-", "?" }
-
-local function verb_delim(text)
-  for _, d in ipairs(VERB_DELIMS) do
-    if not text:find(d, 1, true) then return d end
-  end
-  return nil
-end
-
 Inlines.Code = function(el)
   local text = el.text or ""
-  local d = verb_delim(text)
-  if d then
-    return literal("\\verb" .. d .. text .. d)
-  end
   return literal("\\texttt{" .. escape_str(text) .. "}")
 end
 
@@ -262,13 +246,7 @@ Blocks.Header = function(el)
                        literal("}") }
   local attr = el.attr
   if attr and attr.identifier and attr.identifier ~= "" then
-    -- Pandoc's header form: label tucked inside the hypertarget's closing
-    -- brace. Different from Div (where label is outside) because the
-    -- \section{...} command absorbs a trailing \label naturally.
-    return concat{
-      literal("\\hypertarget{" .. attr.identifier .. "}{%"), cr,
-      body, literal("\\label{" .. attr.identifier .. "}}"),
-    }
+    return concat{ body, literal("\\label{" .. attr.identifier .. "}") }
   end
   return body
 end
@@ -334,7 +312,7 @@ local function list_items(items)
   local sep = is_tight_list(items) and cr or blankline
   local out = {}
   for _, item in ipairs(items) do
-    out[#out+1] = hang(blocks(item, blankline), 2, literal("\\item "))
+    out[#out+1] = concat{ literal("\\item"), cr, nest(blocks(item, blankline), 2) }
   end
   return concat(out, sep)
 end
@@ -363,23 +341,27 @@ Blocks.BulletList = function(el)
   return concat(parts)
 end
 
-local function enum_label_spec(style, delim, start)
+local function enum_label_def(style, delim)
+  -- Returns the \def\labelenumi{...} line, or nil when the list uses
+  -- default Decimal+Period (pandoc omits the def in that case).
+  if style == "DefaultStyle" or style == "Decimal" then
+    if delim == "DefaultDelim" or delim == "Period" then
+      if style == "DefaultStyle" and delim == "DefaultDelim" then
+        return nil
+      end
+    end
+  end
   local fmt
-  if style == "LowerRoman" then fmt = "\\roman*"
-  elseif style == "UpperRoman" then fmt = "\\Roman*"
-  elseif style == "LowerAlpha" then fmt = "\\alph*"
-  elseif style == "UpperAlpha" then fmt = "\\Alph*"
-  else fmt = "\\arabic*" end
+  if style == "LowerRoman" then fmt = "\\roman{enumi}"
+  elseif style == "UpperRoman" then fmt = "\\Roman{enumi}"
+  elseif style == "LowerAlpha" then fmt = "\\alph{enumi}"
+  elseif style == "UpperAlpha" then fmt = "\\Alph{enumi}"
+  else fmt = "\\arabic{enumi}" end
   local labeled
   if delim == "OneParen" then labeled = fmt .. ")"
   elseif delim == "TwoParens" then labeled = "(" .. fmt .. ")"
   else labeled = fmt .. "." end
-  local parts = {}
-  if start and start ~= 1 then
-    parts[#parts+1] = "start=" .. tostring(start)
-  end
-  parts[#parts+1] = "label=" .. labeled
-  return "[" .. table.concat(parts, ", ") .. "]"
+  return "\\def\\labelenumi{" .. labeled .. "}"
 end
 
 Blocks.OrderedList = function(el)
@@ -388,8 +370,16 @@ Blocks.OrderedList = function(el)
   local style = el.style or la.style or "DefaultStyle"
   local delim = el.delimiter or la.delimiter or "DefaultDelim"
   local items = el.content or {}
-  local spec = enum_label_spec(style, delim, start)
-  local parts = { literal("\\begin{enumerate}" .. spec), cr }
+  local parts = { literal("\\begin{enumerate}"), cr }
+  local label_def = enum_label_def(style, delim)
+  if label_def then
+    parts[#parts+1] = literal(label_def)
+    parts[#parts+1] = cr
+  end
+  if start and start > 1 then
+    parts[#parts+1] = literal("\\setcounter{enumi}{" .. tostring(start - 1) .. "}")
+    parts[#parts+1] = cr
+  end
   if is_tight_list(items) then
     parts[#parts+1] = literal("\\tightlist")
     parts[#parts+1] = cr
