@@ -8,8 +8,9 @@ knowledge lives in Rust.
 ## Current state
 
 Readers: `native`, `djot`, `html`. Writers: `native`, `djot`, `html`,
-`plain`, `markdown`, `latex`. Standalone output via `-s` is
-template-driven (pandoc-style doctemplates).
+`plain`, `markdown`, `latex`, `epub`. Standalone output via `-s` is
+template-driven (pandoc-style doctemplates). EPUB is the first binary
+(ZIP-based) format; it uses `ByteStringWriter` + `pandoc.zip.create()`.
 
 Committed milestones:
 - `4ef7007` — Phases 1+2: AST, mlua bridge, pipeline, pandoc-compatible CLI, bundled native reader/writer.
@@ -49,7 +50,7 @@ scripts/pandoc_module.lua — the pandoc.* Lua API (most of it)
 scripts/layout.lua        — pandoc.layout pretty-printer
 scripts/template.lua      — pandoc.template (doctemplates subset)
 scripts/readers/*.lua     — bundled readers (native)
-scripts/writers/*.lua     — bundled writers (native, html, plain)
+scripts/writers/*.lua     — bundled writers (native, html, plain, epub, …)
 scripts/templates/*       — bundled default templates (default.html, default.plain)
 scripts/vendor/djot/      — upstream jgm/djot.lua, unmodified
 ```
@@ -75,8 +76,9 @@ bundled fallback map.
 - **Fixtures come from real pandoc**, not hand-written. Djot goldens are
   generated with the vendored reader (`LUA_PATH=... pandoc -f vendor/...`)
   so tests compare like-for-like.
-- **Writer output terminates in a single `\n`** (mimics pandoc). The pipeline
-  adds it in `src/pipeline.rs::run` if missing.
+- **Text writer output terminates in a single `\n`** (mimics pandoc). The
+  pipeline adds it in `src/pipeline.rs::run` if missing. Binary writers
+  (`ByteStringWriter`) return raw bytes with no trailing newline.
 - **Release binary target: under 5 MB.** Currently 1.7 MB. Bundled Lua
   scripts are embedded via `include_str!`.
 - **Test parity with pandoc semantically**, not byte-for-byte. Our native
@@ -112,7 +114,8 @@ bundled fallback map.
   byte-match pandoc's column-width algorithm (smoke-tested only).
 - Plain writer doesn't implement texmath: `Math` elements emit raw
   TeX, not pandoc's Unicode rendering.
-- No binary format support (docx/epub/odt) — needs `pandoc.zip` + `pandoc.xml`.
+- No docx/odt support — needs `pandoc.xml` (read/parse). EPUB writing
+  works via `pandoc.zip.create()` (Rust-backed) + the Lua epub writer.
 
 ## Useful invocations
 

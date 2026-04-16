@@ -135,6 +135,48 @@ pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error
             Ok(lua.create_string(encoded.as_bytes())?)
         })?,
     )?;
+
+    // --- pandoc.zip -----------------------------------------------------------
+    // pandoc.zip.create(entries) -> binary_string
+    // entries: array of {path=string, data=string, method="stored"|"deflated"}
+    let zip_table: Table = lua.create_table()?;
+    zip_table.set(
+        "create",
+        lua.create_function(|lua, entries: Table| {
+            use std::io::{Cursor, Write};
+            let mut buf = Cursor::new(Vec::new());
+            {
+                let mut zw = zip::ZipWriter::new(&mut buf);
+                for pair in entries.sequence_values::<Table>() {
+                    let entry = pair?;
+                    let path: mlua::String = entry.get("path")?;
+                    let data: mlua::String = entry.get("data")?;
+                    let method_str: Option<mlua::String> = entry.get("method")?;
+                    let is_stored = method_str
+                        .as_ref()
+                        .and_then(|s| s.to_str().ok())
+                        .map(|s| s == "stored")
+                        .unwrap_or(false);
+                    let method = if is_stored {
+                        zip::CompressionMethod::Stored
+                    } else {
+                        zip::CompressionMethod::Deflated
+                    };
+                    let opts = zip::write::SimpleFileOptions::default()
+                        .compression_method(method);
+                    zw.start_file(path.to_str()?, opts)
+                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                    zw.write_all(&data.as_bytes())
+                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                }
+                zw.finish()
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+            }
+            Ok(lua.create_string(buf.into_inner())?)
+        })?,
+    )?;
+    pandoc.set("zip", zip_table)?;
+
     Ok(())
 }
 
