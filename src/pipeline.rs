@@ -198,7 +198,8 @@ fn read_input(files: &[PathBuf]) -> Result<String, Error> {
     }
     let mut buf = String::new();
     for f in files {
-        let piece = std::fs::read_to_string(f)?;
+        let piece = std::fs::read_to_string(f)
+            .map_err(|e| Error::Io(format!("{}: {e}", f.display())))?;
         if !buf.is_empty() {
             buf.push('\n');
         }
@@ -221,7 +222,8 @@ fn apply_filter(
     filter_path: &std::path::Path,
     doc: Value,
 ) -> Result<Value, Error> {
-    let src = std::fs::read_to_string(filter_path)?;
+    let src = std::fs::read_to_string(filter_path)
+        .map_err(|e| Error::Io(format!("{}: {e}", filter_path.display())))?;
     let chunk_name = filter_path.display().to_string();
 
     // Pandoc filters: the filter script may define top-level element-keyed
