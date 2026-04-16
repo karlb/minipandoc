@@ -223,11 +223,11 @@ for input_fmt in "${INPUT_FORMATS[@]}"; do
     echo ""
 
     # --- Check AST equivalence ---
-    # Both tools convert the input to native, then we normalize both
-    # through `pandoc -f native -t native` so formatting differences
-    # (compact vs pretty-printed) are removed.  If the normalized ASTs
-    # match, the tools are doing equivalent work and all output format
-    # pairs are benchmarked.
+    # Both tools convert the input to native.  minipandoc's compact
+    # native is normalized through `pandoc -f native -t native` so
+    # it can be compared against pandoc's (already canonical) output.
+    # If the normalized ASTs match, the tools are doing equivalent
+    # work and all output format pairs are benchmarked.
     read -ra out_fmts <<< "$(output_formats_for "$input_fmt")"
 
     echo "Checking AST equivalence (normalized native)..."
@@ -236,8 +236,7 @@ for input_fmt in "${INPUT_FORMATS[@]}"; do
 
     run_minipandoc "$input_fmt" native "$input_file" 2>/dev/null \
         | pandoc -f native -t native > "$mp_ast" 2>/dev/null
-    run_pandoc "$input_fmt" native "$input_file" 2>/dev/null \
-        | pandoc -f native -t native > "$pd_ast" 2>/dev/null
+    run_pandoc "$input_fmt" native "$input_file" > "$pd_ast" 2>/dev/null
 
     if ! diff -q "$mp_ast" "$pd_ast" &>/dev/null; then
         echo "  ASTs differ after normalization — skipping $input_fmt."
