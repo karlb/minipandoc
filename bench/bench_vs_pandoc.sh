@@ -5,7 +5,7 @@
 # Usage:
 #   bench/bench_vs_pandoc.sh [--size BYTES] [--runs N]
 #
-# Prerequisites: hyperfine, pandoc, /usr/bin/time, cargo build --release
+# Prerequisites: hyperfine, pandoc, cargo build --release
 #
 set -euo pipefail
 
@@ -41,7 +41,7 @@ done
 # Prerequisite checks
 # ---------------------------------------------------------------------------
 fail=0
-for cmd in hyperfine pandoc /usr/bin/time; do
+for cmd in hyperfine pandoc; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: $cmd not found" >&2
         fail=1
@@ -64,12 +64,12 @@ echo ""
 rm -rf "$TMPDIR_BASE"
 mkdir -p "$TMPDIR_BASE"
 
-# Concatenate all djot fixtures into a single block
-block=""
-for f in "$FIXTURES_DIR"/*.dj; do
-    block+="$(cat "$f")"$'\n\n'
-done
-block_size=${#block}
+echo "Generating input..."
+# Concatenate all djot fixtures into a single block file
+block_file="$TMPDIR_BASE/block.dj"
+cat "$FIXTURES_DIR"/*.dj > "$block_file"
+printf '\n' >> "$block_file"
+block_size=$(wc -c < "$block_file")
 
 # Repeat until we reach the target size, rewriting headings to avoid
 # duplicate IDs (append repetition index to each heading line).
@@ -78,21 +78,12 @@ input_file="$TMPDIR_BASE/input.dj"
 i=0
 current_size=0
 while (( current_size < INPUT_SIZE )); do
-    # Rewrite lines starting with # to append a unique suffix
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^#+ ]]; then
-            echo "$line ($i)" >> "$input_file"
-        else
-            echo "$line" >> "$input_file"
-        fi
-    done <<< "$block"
-    current_size=$(stat --printf='%s' "$input_file" 2>/dev/null \
-                   || stat -f '%z' "$input_file")
+    sed "s/^\\(#\\+.*\\)/\\1 ($i)/" "$block_file" >> "$input_file"
+    current_size=$(wc -c < "$input_file")
     ((i++))
 done
 
-actual_size=$(stat --printf='%s' "$input_file" 2>/dev/null \
-              || stat -f '%z' "$input_file")
+actual_size=$(wc -c < "$input_file")
 echo "Input: $input_file ($(( actual_size / 1024 )) KB, $i repetitions)"
 echo "Runs:  $RUNS (+ warmup)"
 echo ""
@@ -122,6 +113,7 @@ COMBOS=(
 matched=()
 skipped=()
 
+echo "Checking output equivalence..."
 for fmt in djot html plain markdown latex; do
     writer="${COMBOS[$fmt]}"
 
@@ -173,48 +165,52 @@ for fmt in "${matched[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# Memory benchmarks via /usr/bin/time
+# Memory benchmarks (optional, requires /usr/bin/time -v)
 # ---------------------------------------------------------------------------
-echo "========================================="
-echo " Memory benchmark (peak RSS via /usr/bin/time)"
-echo "========================================="
-echo ""
+if command -v /usr/bin/time &>/dev/null && /usr/bin/time -v true 2>/dev/null; then
+    echo "========================================="
+    echo " Memory benchmark (peak RSS via /usr/bin/time)"
+    echo "========================================="
+    echo ""
 
-printf "%-18s %12s %12s %10s\n" "Conversion" "minipandoc" "pandoc" "Ratio"
-printf "%-18s %12s %12s %10s\n" "----------" "----------" "------" "-----"
+    printf "%-18s %12s %12s %10s\n" "Conversion" "minipandoc" "pandoc" "Ratio"
+    printf "%-18s %12s %12s %10s\n" "----------" "----------" "------" "-----"
 
-for fmt in "${matched[@]}"; do
-    writer="${COMBOS[$fmt]}"
+    for fmt in "${matched[@]}"; do
+        writer="${COMBOS[$fmt]}"
 
-    # Run 3 times, take the median peak RSS
-    mp_rss_vals=()
-    pd_rss_vals=()
-    for _r in 1 2 3; do
-        mp_rss=$( (/usr/bin/time -v "$MINIPANDOC" -f djot -t "$fmt" "$input_file" > /dev/null) 2>&1 \
-                  | grep "Maximum resident set size" | awk '{print $NF}')
-        pd_rss=$( (LUA_PATH="$LUA_PATH" /usr/bin/time -v pandoc -f "$DJOT_READER" -t "$writer" "$input_file" > /dev/null) 2>&1 \
-                  | grep "Maximum resident set size" | awk '{print $NF}')
-        mp_rss_vals+=("$mp_rss")
-        pd_rss_vals+=("$pd_rss")
+        # Run 3 times, take the median peak RSS
+        mp_rss_vals=()
+        pd_rss_vals=()
+        for _r in 1 2 3; do
+            mp_rss=$( (/usr/bin/time -v "$MINIPANDOC" -f djot -t "$fmt" "$input_file" > /dev/null) 2>&1 \
+                      | grep "Maximum resident set size" | awk '{print $NF}')
+            pd_rss=$( (LUA_PATH="$LUA_PATH" /usr/bin/time -v pandoc -f "$DJOT_READER" -t "$writer" "$input_file" > /dev/null) 2>&1 \
+                      | grep "Maximum resident set size" | awk '{print $NF}')
+            mp_rss_vals+=("$mp_rss")
+            pd_rss_vals+=("$pd_rss")
+        done
+
+        # Sort and take median (index 1 of 3)
+        IFS=$'\n' mp_sorted=($(sort -n <<<"${mp_rss_vals[*]}")); unset IFS
+        IFS=$'\n' pd_sorted=($(sort -n <<<"${pd_rss_vals[*]}")); unset IFS
+        mp_median="${mp_sorted[1]}"
+        pd_median="${pd_sorted[1]}"
+
+        if [[ "$mp_median" -gt 0 ]]; then
+            ratio=$(awk "BEGIN {printf \"%.1fx\", $pd_median / $mp_median}")
+        else
+            ratio="N/A"
+        fi
+
+        printf "%-18s %10s KB %10s KB %10s\n" \
+            "djot -> $fmt" "$mp_median" "$pd_median" "$ratio"
     done
-
-    # Sort and take median (index 1 of 3)
-    IFS=$'\n' mp_sorted=($(sort -n <<<"${mp_rss_vals[*]}")); unset IFS
-    IFS=$'\n' pd_sorted=($(sort -n <<<"${pd_rss_vals[*]}")); unset IFS
-    mp_median="${mp_sorted[1]}"
-    pd_median="${pd_sorted[1]}"
-
-    if [[ "$mp_median" -gt 0 ]]; then
-        ratio=$(awk "BEGIN {printf \"%.1fx\", $pd_median / $mp_median}")
-    else
-        ratio="N/A"
-    fi
-
-    printf "%-18s %10s KB %10s KB %10s\n" \
-        "djot -> $fmt" "$mp_median" "$pd_median" "$ratio"
-done
-
-echo ""
+    echo ""
+else
+    echo "(Skipping memory benchmark — /usr/bin/time -v not available)"
+    echo ""
+fi
 
 # ---------------------------------------------------------------------------
 # Cleanup
