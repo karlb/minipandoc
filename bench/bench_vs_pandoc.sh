@@ -85,9 +85,17 @@ output_formats_for() {
     local fmt="$1"
     case "$fmt" in
         djot) echo "djot html plain markdown latex" ;;
-        html) echo "native djot plain markdown latex" ;;
+        html) echo "html plain markdown latex" ;;
         *)    echo "ERROR: unknown input format: $fmt" >&2; return 1 ;;
     esac
+}
+
+# Does both tools share the same reader for this input format?
+# When true, output equivalence is checked and only matching pairs
+# are benchmarked. When false (different reader implementations),
+# all pairs are benchmarked without equivalence check.
+has_shared_reader() {
+    [[ "$1" == "djot" ]]
 }
 
 # Apply a format-specific sed to make headings unique per repetition.
@@ -217,32 +225,43 @@ for input_fmt in "${INPUT_FORMATS[@]}"; do
     echo ""
 
     # --- Check output equivalence ---
+    # When both tools share the same reader (djot via vendored Lua scripts),
+    # the ASTs are identical and we require byte-equal output.  When the
+    # readers differ (html — our Lua reader vs pandoc's built-in), ASTs
+    # diverge in minor ways, so we benchmark all pairs without an
+    # equivalence gate.
     read -ra out_fmts <<< "$(output_formats_for "$input_fmt")"
     matched=()
     skipped=()
 
-    echo "Checking output equivalence..."
-    for out_fmt in "${out_fmts[@]}"; do
-        mp_out="$fmt_tmpdir/mp_$out_fmt.out"
-        pd_out="$fmt_tmpdir/pd_$out_fmt.out"
+    if has_shared_reader "$input_fmt"; then
+        echo "Checking output equivalence..."
+        for out_fmt in "${out_fmts[@]}"; do
+            mp_out="$fmt_tmpdir/mp_$out_fmt.out"
+            pd_out="$fmt_tmpdir/pd_$out_fmt.out"
 
-        run_minipandoc "$input_fmt" "$out_fmt" "$input_file" > "$mp_out" 2>/dev/null
-        run_pandoc "$input_fmt" "$out_fmt" "$input_file" > "$pd_out" 2>/dev/null
+            run_minipandoc "$input_fmt" "$out_fmt" "$input_file" > "$mp_out" 2>/dev/null
+            run_pandoc "$input_fmt" "$out_fmt" "$input_file" > "$pd_out" 2>/dev/null
 
-        if diff -q "$mp_out" "$pd_out" &>/dev/null; then
-            matched+=("$out_fmt")
-            echo "  $input_fmt -> $out_fmt: output matches"
-        else
-            skipped+=("$out_fmt")
-            echo "  $input_fmt -> $out_fmt: output differs (skipping)"
-        fi
-    done
-    echo ""
-
-    if [[ ${#matched[@]} -eq 0 ]]; then
-        echo "No format combos produced matching output for $input_fmt. Skipping."
+            if diff -q "$mp_out" "$pd_out" &>/dev/null; then
+                matched+=("$out_fmt")
+                echo "  $input_fmt -> $out_fmt: output matches"
+            else
+                skipped+=("$out_fmt")
+                echo "  $input_fmt -> $out_fmt: output differs (skipping)"
+            fi
+        done
         echo ""
-        continue
+
+        if [[ ${#matched[@]} -eq 0 ]]; then
+            echo "No format combos produced matching output for $input_fmt. Skipping."
+            echo ""
+            continue
+        fi
+    else
+        echo "(Readers differ — benchmarking all output formats without equivalence check)"
+        matched=("${out_fmts[@]}")
+        echo ""
     fi
 
     # --- CPU benchmarks via hyperfine ---
