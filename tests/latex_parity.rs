@@ -68,16 +68,11 @@ fn fixtures() -> Vec<PathBuf> {
 /// Fixtures where we don't attempt byte-parity. For each, smoke test
 /// that `pandoc -f latex -t native` accepts our output as valid LaTeX.
 const SMOKE_ONLY: &[&str] = &[
-    // Our escape set is broader (e.g. we emit \textasciitilde{} where
-    // pandoc uses \textasciitilde\ ).
-    "escapes.native",
     // Table column spec formatting (`@{}ll@{}` vs `lcr`) varies.
     "table.native",
     // Complex tables are wrapped in verbatim — structurally different
     // from pandoc which uses full longtable with nested minipages.
     "complex_table.native",
-    // DefinitionList loose-vs-tight and \tightlist placement vary.
-    "lists.native",
     // Pandoc syntax-highlights code blocks that have a language class
     // (Shaded/Highlighting); we emit \begin{verbatim}.
     "codeblock.native",

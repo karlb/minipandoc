@@ -138,7 +138,13 @@ function layout.min_offset(doc)
 end
 
 function layout.real_length(s)
-  return #tostring(s or "")
+  s = tostring(s or "")
+  -- Width is number of Unicode codepoints, not bytes. Multibyte chars
+  -- (curly quotes, em-dashes, CJK) would otherwise inflate the column
+  -- count and cause spurious wraps.
+  local n = utf8.len(s)
+  if n then return n end
+  return #s
 end
 
 -- ---------------------------------------------------------------------------
@@ -306,7 +312,7 @@ function layout.render(doc, cols)
     if text == "" then return end
     start_line()
     cur = cur .. text
-    line_col = line_col + #text
+    line_col = line_col + layout.real_length(text)
   end
 
   local i = 1
@@ -325,7 +331,7 @@ function layout.render(doc, cols)
         while j <= #tokens do
           local nt = tokens[j]
           if nt.t == "txt" then
-            next_w = next_w + #nt.s; j = j + 1
+            next_w = next_w + layout.real_length(nt.s); j = j + 1
           else
             break
           end
