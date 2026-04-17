@@ -206,6 +206,9 @@ generate_input() {
 rm -rf "$TMPDIR_BASE"
 mkdir -p "$TMPDIR_BASE"
 
+# Aggregate parity results across input formats for the final scorecard.
+declare -a SCORECARD_LINES=()
+
 for input_fmt in "${INPUT_FORMATS[@]}"; do
     echo "========================================="
     echo " Input format: $input_fmt"
@@ -248,6 +251,58 @@ for input_fmt in "${INPUT_FORMATS[@]}"; do
 
     matched=("${out_fmts[@]}")
 
+    # --- Writer parity check (per output format) ---
+    # For djot/plain/markdown/latex, diff raw bytes.
+    # For html, diff the AST that pandoc's html reader produces from
+    # each output — HTML has styling/syntax-highlighting divergences
+    # that are intentional, so we check content equivalence rather
+    # than byte-identity.
+    echo "-----------------------------------------"
+    echo " Writer parity: $input_fmt"
+    echo "-----------------------------------------"
+
+    declare -a parity_pass=()
+    declare -a parity_fail=()
+
+    for out_fmt in "${matched[@]}"; do
+        mp_out="$fmt_tmpdir/mp_$out_fmt.out"
+        pd_out="$fmt_tmpdir/pd_$out_fmt.out"
+
+        run_minipandoc "$input_fmt" "$out_fmt" "$input_file" > "$mp_out" 2>/dev/null
+        run_pandoc "$input_fmt" "$out_fmt" "$input_file" > "$pd_out" 2>/dev/null
+
+        if [[ "$out_fmt" == "html" ]]; then
+            # Semantic parity: reparse both HTMLs to native and compare.
+            mp_ast_out="$fmt_tmpdir/mp_${out_fmt}.ast"
+            pd_ast_out="$fmt_tmpdir/pd_${out_fmt}.ast"
+            pandoc -f html-auto_identifiers -t native < "$mp_out" 2>/dev/null \
+                | pandoc -f native -t native > "$mp_ast_out" 2>/dev/null
+            pandoc -f html-auto_identifiers -t native < "$pd_out" 2>/dev/null \
+                | pandoc -f native -t native > "$pd_ast_out" 2>/dev/null
+            diff_target_mp="$mp_ast_out"
+            diff_target_pd="$pd_ast_out"
+            parity_kind="semantic"
+        else
+            diff_target_mp="$mp_out"
+            diff_target_pd="$pd_out"
+            parity_kind="byte"
+        fi
+
+        if diff -q "$diff_target_mp" "$diff_target_pd" &>/dev/null; then
+            parity_pass+=("$out_fmt")
+            printf "  %-10s parity (%s)\n" "$out_fmt:" "$parity_kind"
+        else
+            parity_fail+=("$out_fmt")
+            printf "  %-10s NON-PARITY (%s)\n" "$out_fmt:" "$parity_kind"
+            diff "$diff_target_mp" "$diff_target_pd" 2>/dev/null | head -6 | sed 's/^/      /' || true
+        fi
+    done
+    echo ""
+
+    total_outs=${#matched[@]}
+    pass_outs=${#parity_pass[@]}
+    SCORECARD_LINES+=("$input_fmt: $pass_outs/$total_outs at parity ($(IFS=,; echo "${parity_pass[*]:-none}"))")
+
     # --- CPU benchmarks via hyperfine ---
     echo "-----------------------------------------"
     echo " CPU benchmark: $input_fmt (hyperfine, $RUNS runs)"
@@ -255,7 +310,11 @@ for input_fmt in "${INPUT_FORMATS[@]}"; do
     echo ""
 
     for out_fmt in "${matched[@]}"; do
-        echo "--- $input_fmt -> $out_fmt ---"
+        parity_tag="non-parity"
+        for p in "${parity_pass[@]}"; do
+            [[ "$p" == "$out_fmt" ]] && parity_tag="parity"
+        done
+        echo "--- $input_fmt -> $out_fmt ($parity_tag) ---"
         hyperfine \
             --warmup 3 \
             --runs "$RUNS" \
@@ -315,6 +374,14 @@ for input_fmt in "${INPUT_FORMATS[@]}"; do
     fi
 
 done
+
+echo "========================================="
+echo " Parity scorecard"
+echo "========================================="
+for line in "${SCORECARD_LINES[@]}"; do
+    echo "  $line"
+done
+echo ""
 
 echo "Temp files in: $TMPDIR_BASE"
 echo "Done."
