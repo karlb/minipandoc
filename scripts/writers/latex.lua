@@ -37,9 +37,31 @@ local TEXT_ESCAPES = {
   [">"]  = "\\textgreater{}",
 }
 
+-- Unicode → TeX quote/dash conversions (matches pandoc's LaTeX writer).
+local UNICODE_REPLACEMENTS = {
+  ["\xe2\x80\x9c"] = "``",   -- U+201C LEFT DOUBLE QUOTATION MARK
+  ["\xe2\x80\x9d"] = "''",   -- U+201D RIGHT DOUBLE QUOTATION MARK
+  ["\xe2\x80\x98"] = "`",    -- U+2018 LEFT SINGLE QUOTATION MARK
+  ["\xe2\x80\x99"] = "'",    -- U+2019 RIGHT SINGLE QUOTATION MARK
+  ["\xe2\x80\x94"] = "---",  -- U+2014 EM DASH
+  ["\xe2\x80\x93"] = "--",   -- U+2013 EN DASH
+  ["\xe2\x80\xa6"] = "\\ldots{}", -- U+2026 HORIZONTAL ELLIPSIS
+}
+
 local function escape_str(s)
   s = tostring(s or "")
-  return (s:gsub("[\\%{%}%$&#%%^_~<>]", TEXT_ESCAPES))
+  -- Unicode punctuation → TeX sequences.
+  s = s:gsub("\xe2\x80[\x93\x94\x98\x99\x9c\x9d\xa6]", UNICODE_REPLACEMENTS)
+  -- Backslash specially: pandoc emits `\textbackslash ` before a letter,
+  -- `\textbackslash{}` at end-of-string, `\textbackslash` bare before
+  -- non-letters (punctuation, digits).
+  s = s:gsub("\\(%a)", "\\textbackslash %1")
+  s = s:gsub("\\$", "\\textbackslash{}")
+  s = s:gsub("\\(%W)", "\\textbackslash%1")
+  -- Tilde similarly: `\textasciitilde ` before letter, `\textasciitilde{}` else.
+  s = s:gsub("~(%a)", "\\textasciitilde %1")
+  s = s:gsub("~", "\\textasciitilde{}")
+  return (s:gsub("[%{%}%$&#%%^_<>]", TEXT_ESCAPES))
 end
 
 -- Link targets / image paths: the only chars that genuinely need escaping
@@ -130,7 +152,12 @@ Inlines.Cite = function(el)
 end
 
 Inlines.Code = function(el)
-  local text = escape_str(el.text or ""):gsub(" ", "\\ ")
+  -- In verbatim context, the space-terminated `\textbackslash ` form
+  -- clashes with our Code space-escape; use the braced form instead.
+  local text = escape_str(el.text or "")
+    :gsub("\\textbackslash ", "\\textbackslash{}")
+    :gsub("\\textasciitilde ", "\\textasciitilde{}")
+    :gsub(" ", "\\ ")
   return literal("\\texttt{" .. text .. "}")
 end
 
@@ -385,22 +412,33 @@ end
 
 Blocks.DefinitionList = function(el)
   local items = el.content or {}
+  -- Tight list: every definition is a single Plain block (no Paras).
+  local tight = true
+  for _, item in ipairs(items) do
+    for _, d in ipairs(item[2] or {}) do
+      for _, blk in ipairs(d) do
+        if blk.tag ~= "Plain" then tight = false; break end
+      end
+      if not tight then break end
+    end
+    if not tight then break end
+  end
+
   local parts = { literal("\\begin{description}"), cr }
+  if tight then parts[#parts+1] = concat{ literal("\\tightlist"), cr } end
   local item_docs = {}
   for _, item in ipairs(items) do
     local term, defs = item[1], item[2]
-    local term_doc = concat{ literal("\\item["), inlines(term),
-                             literal("] ") }
-    -- Multiple definitions are joined with blanklines.
     local def_bodies = {}
     for _, d in ipairs(defs or {}) do
       def_bodies[#def_bodies+1] = blocks(d, blankline)
     end
     item_docs[#item_docs+1] = concat{
-      term_doc, concat(def_bodies, blankline),
+      literal("\\item["), inlines(term), literal("]"), cr,
+      concat(def_bodies, blankline),
     }
   end
-  parts[#parts+1] = concat(item_docs, blankline)
+  parts[#parts+1] = concat(item_docs, cr)
   parts[#parts+1] = cr
   parts[#parts+1] = literal("\\end{description}")
   return concat(parts)
@@ -604,31 +642,38 @@ local function render_longtable(el)
     parts[#parts+1] = cr
   end
 
-  if #hrows > 0 then
-    parts[#parts+1] = literal("\\toprule\\noalign{}")
-    parts[#parts+1] = cr
-    for _, r in ipairs(hrows) do
-      parts[#parts+1] = row_doc(r)
+  -- When there's a caption, pandoc emits the head block twice: once
+  -- closed by \endfirsthead (first page) and once by \endhead
+  -- (continuation pages). Without a caption, only the \endhead form.
+  local has_caption = el.caption and el.caption.long
+                      and #el.caption.long > 0
+  local function emit_head_block()
+    if #hrows > 0 then
+      parts[#parts+1] = literal("\\toprule\\noalign{}")
+      parts[#parts+1] = cr
+      for _, r in ipairs(hrows) do
+        parts[#parts+1] = row_doc(r)
+        parts[#parts+1] = cr
+      end
+      parts[#parts+1] = literal("\\midrule\\noalign{}")
+      parts[#parts+1] = cr
+    else
+      parts[#parts+1] = literal("\\toprule\\noalign{}")
       parts[#parts+1] = cr
     end
-    parts[#parts+1] = literal("\\midrule\\noalign{}")
-    parts[#parts+1] = cr
-    parts[#parts+1] = literal("\\endhead")
-    parts[#parts+1] = cr
-    parts[#parts+1] = literal("\\bottomrule\\noalign{}")
-    parts[#parts+1] = cr
-    parts[#parts+1] = literal("\\endlastfoot")
-    parts[#parts+1] = cr
-  else
-    parts[#parts+1] = literal("\\toprule\\noalign{}")
-    parts[#parts+1] = cr
-    parts[#parts+1] = literal("\\endhead")
-    parts[#parts+1] = cr
-    parts[#parts+1] = literal("\\bottomrule\\noalign{}")
-    parts[#parts+1] = cr
-    parts[#parts+1] = literal("\\endlastfoot")
+  end
+  if has_caption then
+    emit_head_block()
+    parts[#parts+1] = literal("\\endfirsthead")
     parts[#parts+1] = cr
   end
+  emit_head_block()
+  parts[#parts+1] = literal("\\endhead")
+  parts[#parts+1] = cr
+  parts[#parts+1] = literal("\\bottomrule\\noalign{}")
+  parts[#parts+1] = cr
+  parts[#parts+1] = literal("\\endlastfoot")
+  parts[#parts+1] = cr
 
   for _, r in ipairs(brows) do
     parts[#parts+1] = row_doc(r)

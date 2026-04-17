@@ -33,6 +33,12 @@ local function escape_str(s)
   s = s:gsub("\\", "\\\\")
   s = s:gsub("([%*_%[%]`<>%$~^])", "\\%1")
   s = s:gsub("!(%[)", "\\!%1")
+  -- Smart-quote fold: pandoc's markdown writer rewrites Unicode curly
+  -- quotes back to ASCII so the source is plain-smart-quotes friendly.
+  s = s:gsub("\xe2\x80\x9c", '"')
+       :gsub("\xe2\x80\x9d", '"')
+       :gsub("\xe2\x80\x98", "'")
+       :gsub("\xe2\x80\x99", "'")
   return s
 end
 
@@ -59,8 +65,7 @@ local function attr_is_empty(attr)
   return not (has_id or has_classes or has_kvs)
 end
 
-local function render_attr(attr)
-  if attr_is_empty(attr) then return "" end
+local function attr_parts(attr)
   local parts = {}
   if attr.identifier and attr.identifier ~= "" then
     parts[#parts+1] = "#" .. attr.identifier
@@ -71,7 +76,27 @@ local function render_attr(attr)
   for _, pair in ipairs(attr.attributes or {}) do
     parts[#parts+1] = pair[1] .. '="' .. escape_attr_value(pair[2]) .. '"'
   end
-  return "{" .. table.concat(parts, " ") .. "}"
+  return parts
+end
+
+local function render_attr(attr)
+  if attr_is_empty(attr) then return "" end
+  return "{" .. table.concat(attr_parts(attr), " ") .. "}"
+end
+
+-- Layout-doc variant with breakable spaces between attributes. Used where
+-- the caller wants wrap points inside the attribute block (matches pandoc
+-- 3.x markdown writer, which wraps inside `{...}` on long paragraphs).
+local function render_attr_doc(attr)
+  if attr_is_empty(attr) then return layout.empty end
+  local parts = attr_parts(attr)
+  local docs = { literal("{") }
+  for i, p in ipairs(parts) do
+    if i > 1 then docs[#docs+1] = layout.space end
+    docs[#docs+1] = literal(p)
+  end
+  docs[#docs+1] = literal("}")
+  return concat(docs)
 end
 
 -- For code blocks: pandoc emits `` ```python `` when the only attr is a
@@ -236,7 +261,7 @@ Inlines.Link = function(el)
     parts[#parts+1] = literal(' "' .. escape_title(title) .. '"')
   end
   parts[#parts+1] = literal(")")
-  if attr_str ~= "" then parts[#parts+1] = literal(attr_str) end
+  if attr_str ~= "" then parts[#parts+1] = render_attr_doc(el.attr) end
   return concat(parts)
 end
 
@@ -250,7 +275,7 @@ Inlines.Image = function(el)
     parts[#parts+1] = literal(' "' .. escape_title(title) .. '"')
   end
   parts[#parts+1] = literal(")")
-  if attr_str ~= "" then parts[#parts+1] = literal(attr_str) end
+  if attr_str ~= "" then parts[#parts+1] = render_attr_doc(el.attr) end
   return concat(parts)
 end
 
@@ -260,12 +285,11 @@ Inlines.Note = function(el)
 end
 
 Inlines.Span = function(el)
-  local attr_str = render_attr(el.attr)
-  if attr_str == "" then
+  if attr_is_empty(el.attr) then
     return inlines(el.content)
   end
   return concat{ literal("["), inlines(el.content), literal("]"),
-                 literal(attr_str) }
+                 render_attr_doc(el.attr) }
 end
 
 -- ---------------------------------------------------------------------------
@@ -279,7 +303,7 @@ Blocks.Para = function(el) return inlines(el.content) end
 -- pandoc's auto_identifiers algorithm: lowercase, replace spaces with
 -- hyphens, strip non-alnum (except hyphens/underscores/periods), and
 -- remove leading non-letter characters.
-local function auto_identifier(ils)
+local function auto_identifier_base(ils)
   local text = stringify(ils)
   text = text:lower()
   text = text:gsub("%s+", "-")
@@ -289,20 +313,42 @@ local function auto_identifier(ils)
   return text
 end
 
+-- Per-document set of auto-ids already assigned. Pandoc disambiguates
+-- by appending `-1`, `-2`, ... to collisions — our suppress logic must
+-- follow the same path to match pandoc byte-for-byte on repeated
+-- heading text or when an explicit id clashes with an earlier auto id.
+local used_auto_ids = {}
+
+local function auto_identifier(ils)
+  local base = auto_identifier_base(ils)
+  local candidate = base
+  local n = 1
+  while used_auto_ids[candidate] do
+    candidate = base .. "-" .. n
+    n = n + 1
+  end
+  used_auto_ids[candidate] = true
+  return candidate
+end
+
 Blocks.Header = function(el)
   local level = el.level or 1
   local hashes = string.rep("#", level)
-  -- Suppress attribute block when the only attribute is the auto-derived id.
+  -- Suppress attribute block when the only attribute is the auto-derived id
+  -- (accounting for pandoc's global disambiguation of repeated headings).
   local attr = el.attr
+  local auto = auto_identifier(el.content)
   local suppress = false
   if attr and attr.identifier and attr.identifier ~= "" then
     local has_classes = attr.classes and #attr.classes > 0
     local has_kvs = attr.attributes and #attr.attributes > 0
     if not has_classes and not has_kvs then
-      if attr.identifier == auto_identifier(el.content) then
+      if attr.identifier == auto then
         suppress = true
       end
     end
+    -- Reserve the explicit id so future auto-ids don't collide with it.
+    used_auto_ids[attr.identifier] = true
   end
   local attr_str = suppress and "" or render_attr(attr)
   local parts = { literal(hashes), literal(" "), inlines(el.content) }
@@ -769,6 +815,89 @@ local function render_pipe_table(el)
   return body
 end
 
+-- Simple-table form: 2-space indent, aligned columns, dashes under the
+-- header. Used when alignment is default and no cell spans multiple
+-- lines. Matches pandoc 3.x's markdown writer output for such tables.
+local function render_simple_table(el)
+  local hrows, brows = rows_from_table(el)
+  local ncols = 0
+  if #hrows > 0 then ncols = #(hrows[1].cells or {})
+  elseif #brows > 0 then ncols = #(brows[1].cells or {}) end
+  if ncols == 0 then return layout.empty end
+
+  local function rendered(cell)
+    return render_simple_inline_cell(cell)
+  end
+
+  local widths = {}
+  for i = 1, ncols do widths[i] = 3 end
+
+  local function measure(rows)
+    for _, r in ipairs(rows) do
+      for i, cell in ipairs(r.cells or {}) do
+        local s = rendered(cell)
+        if layout.real_length(s) > widths[i] then
+          widths[i] = layout.real_length(s)
+        end
+      end
+    end
+  end
+  measure(hrows); measure(brows)
+
+  local function format_row(r)
+    local parts = { "" }
+    for i = 1, ncols do
+      local s = (r.cells or {})[i]
+      s = s and rendered(s) or ""
+      local pad = widths[i] - layout.real_length(s)
+      parts[#parts+1] = s .. string.rep(" ", pad)
+    end
+    return "  " .. table.concat(parts, " "):gsub("^%s", "")
+  end
+
+  local dash_parts = { "" }
+  for i = 1, ncols do
+    dash_parts[#dash_parts+1] = string.rep("-", widths[i])
+  end
+  local dash_line = "  " .. table.concat(dash_parts, " "):gsub("^%s", "")
+
+  local lines = {}
+  if #hrows > 0 then
+    for _, r in ipairs(hrows) do lines[#lines+1] = format_row(r) end
+    lines[#lines+1] = dash_line
+  else
+    lines[#lines+1] = dash_line
+  end
+  for _, r in ipairs(brows) do lines[#lines+1] = format_row(r) end
+  if #hrows == 0 then lines[#lines+1] = dash_line end
+
+  -- Trim trailing spaces from each line (pandoc emits no trailing ws).
+  for i, ln in ipairs(lines) do lines[i] = ln:gsub("%s+$", "") end
+
+  local parts = {}
+  for i, line in ipairs(lines) do
+    if i > 1 then parts[#parts+1] = cr end
+    parts[#parts+1] = literal(line)
+  end
+  local body = concat(parts)
+  if el.caption and el.caption.long and #el.caption.long > 0 then
+    return concat{
+      body, blankline,
+      literal("  : "), blocks(el.caption.long, cr),
+    }
+  end
+  return body
+end
+
+local function is_simple_table(el)
+  if not is_pipe_table(el) then return false end
+  for _, spec in ipairs(el.colspecs or {}) do
+    local align = spec[1] or "AlignDefault"
+    if align ~= "AlignDefault" then return false end
+  end
+  return true
+end
+
 local function render_grid_table(el)
   -- Borrowed, with minor tweaks, from plain.lua's grid-table renderer.
   -- Pandoc's -t markdown accepts (and emits) grid tables for complex cells.
@@ -860,6 +989,7 @@ local function render_grid_table(el)
 end
 
 Blocks.Table = function(el)
+  if is_simple_table(el) then return render_simple_table(el) end
   if is_pipe_table(el) then return render_pipe_table(el) end
   return render_grid_table(el)
 end
@@ -893,6 +1023,7 @@ end
 
 function Writer(doc, opts)
   footnotes = {}
+  used_auto_ids = {}
   local body = blocks(doc.blocks or {}, blankline)
   local notes = render_footnotes()
   local cols = (opts and opts.columns) or 72
