@@ -6,49 +6,7 @@
 
 mod common;
 
-use std::io::Write;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-
-fn unique_tmpdir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "mp-embed-{}-{}",
-        tag,
-        std::process::id()
-    ));
-    // Clean up any stale directory from a previous run with the same PID
-    // (rare, but cheap to guard against).
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("create tmpdir");
-    dir
-}
-
-fn run_minipandoc_in(
-    dir: &std::path::Path,
-    args: &[&str],
-    stdin_bytes: &[u8],
-) -> (bool, String, String) {
-    let mut child = Command::new(common::binary_path())
-        .args(args)
-        .current_dir(dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn minipandoc");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin_bytes)
-        .unwrap();
-    let out = child.wait_with_output().expect("wait minipandoc");
-    (
-        out.status.success(),
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        String::from_utf8_lossy(&out.stderr).into_owned(),
-    )
-}
+use common::{run_minipandoc, TempDir};
 
 /// A minimal PNG signature + a trivial 1×1 IHDR chunk. Our embed path only
 /// base64-encodes the bytes, so these don't need to form a valid decodable
@@ -62,15 +20,15 @@ const PNG_BYTES: &[u8] = &[
 
 #[test]
 fn embeds_image_as_data_uri() {
-    let dir = unique_tmpdir("img");
-    std::fs::write(dir.join("pixel.png"), PNG_BYTES).unwrap();
+    let dir = TempDir::new("embed-img");
+    std::fs::write(dir.path().join("pixel.png"), PNG_BYTES).unwrap();
 
     let native =
         br#"[Para [Image ("",[],[]) [Str "alt"] ("pixel.png","")]]"# as &[u8];
-    let (ok, stdout, stderr) = run_minipandoc_in(
-        &dir,
+    let (ok, stdout, stderr) = run_minipandoc(
         &["-f", "native", "-t", "html", "--embed-resources"],
         native,
+        Some(dir.path()),
     );
     assert!(ok, "minipandoc failed: stderr={stderr}\nstdout={stdout}");
 
@@ -85,24 +43,22 @@ fn embeds_image_as_data_uri() {
         !stdout.contains("src=\"pixel.png\""),
         "expected original src to be replaced:\n{stdout}"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn embeds_css_as_inline_style() {
-    let dir = unique_tmpdir("css");
-    std::fs::write(dir.join("x.css"), "body{color:red}").unwrap();
+    let dir = TempDir::new("embed-css");
+    std::fs::write(dir.path().join("x.css"), "body{color:red}").unwrap();
 
     let native = br#"[Para [Str "hi"]]"# as &[u8];
-    let (ok, stdout, stderr) = run_minipandoc_in(
-        &dir,
+    let (ok, stdout, stderr) = run_minipandoc(
         &[
             "-f", "native", "-t", "html",
             "--embed-resources",
             "-V", "css=x.css",
         ],
         native,
+        Some(dir.path()),
     );
     assert!(ok, "minipandoc failed: stderr={stderr}\nstdout={stdout}");
 
@@ -118,19 +74,17 @@ fn embeds_css_as_inline_style() {
         !stdout.contains("<link rel=\"stylesheet\""),
         "expected no <link rel=\"stylesheet\"> when embedding:\n{stdout}"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn embed_resources_implies_standalone() {
-    let dir = unique_tmpdir("sa");
+    let dir = TempDir::new("embed-sa");
     let native = br#"[Para [Str "hi"]]"# as &[u8];
     // Note: no explicit -s.
-    let (ok, stdout, stderr) = run_minipandoc_in(
-        &dir,
+    let (ok, stdout, stderr) = run_minipandoc(
         &["-f", "native", "-t", "html", "--embed-resources"],
         native,
+        Some(dir.path()),
     );
     assert!(ok, "minipandoc failed: stderr={stderr}\nstdout={stdout}");
     assert!(
@@ -138,19 +92,17 @@ fn embed_resources_implies_standalone() {
         "expected DOCTYPE at start (standalone), got:\n{}",
         stdout.chars().take(80).collect::<String>()
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn unresolvable_image_falls_back_to_original_src() {
-    let dir = unique_tmpdir("missing");
+    let dir = TempDir::new("embed-missing");
     let native =
         br#"[Para [Image ("",[],[]) [Str "x"] ("nope.png","")]]"# as &[u8];
-    let (ok, stdout, stderr) = run_minipandoc_in(
-        &dir,
+    let (ok, stdout, stderr) = run_minipandoc(
         &["-f", "native", "-t", "html", "--embed-resources"],
         native,
+        Some(dir.path()),
     );
     assert!(ok, "minipandoc failed: stderr={stderr}\nstdout={stdout}");
     // Missing file -> leave original reference intact rather than erroring.
@@ -162,6 +114,4 @@ fn unresolvable_image_falls_back_to_original_src() {
         !stdout.contains("data:"),
         "expected no data URI when fetch fails:\n{stdout}"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -1089,4 +1089,19 @@ pandoc._internal = {
   BLOCK_TAGS = BLOCK_TAGS,
 }
 
+-- Shared HTML-family escapes. Used by the bundled html and epub writers;
+-- any new XML/HTML writer should reuse these rather than rolling its own.
+function pandoc._internal.escape_html(s)
+  s = tostring(s or "")
+  s = s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+  return s
+end
+
+function pandoc._internal.escape_html_attr(s)
+  s = tostring(s or "")
+  s = s:gsub("&", "&amp;"):gsub('"', "&quot;")
+       :gsub("<", "&lt;"):gsub(">", "&gt;")
+  return s
+end
+
 return pandoc

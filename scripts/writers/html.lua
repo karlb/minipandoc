@@ -17,22 +17,8 @@ local footnotes = {}
 -- can see the --embed-resources flag.
 local embed_resources = false
 
-local function escape_text(s)
-  s = tostring(s or "")
-  s = s:gsub("&", "&amp;")
-  s = s:gsub("<", "&lt;")
-  s = s:gsub(">", "&gt;")
-  return s
-end
-
-local function escape_attr(s)
-  s = tostring(s or "")
-  s = s:gsub("&", "&amp;")
-  s = s:gsub('"', "&quot;")
-  s = s:gsub("<", "&lt;")
-  s = s:gsub(">", "&gt;")
-  return s
-end
+local escape_text = pandoc._internal.escape_html
+local escape_attr = pandoc._internal.escape_html_attr
 
 -- Standard HTML attributes that should NOT get a data- prefix.
 local STANDARD_ATTRS = {}
