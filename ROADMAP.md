@@ -1,161 +1,214 @@
 # minipandoc — Roadmap
 
-Long-term direction after Phases 1+2 (Rust core + CLI) and the `djot` format
-both landed. Order below reflects a recommended sequence but items are
-mostly independent.
+Long-term direction. The Rust core, pandoc-compatible CLI, and a working
+set of readers/writers have landed; the open questions now are which
+formats to add next, how close to match pandoc's output byte-for-byte,
+and how to ship the artifact.
 
 ## Done
 
-- **Rust core, Lua bridge, pandoc-compatible CLI** (commit `4ef7007`).
-- **`native` format** bundled as Lua reader/writer (commit `4ef7007`).
-- **`djot` format** via vendored `jgm/djot.lua` + pure-Lua `pandoc.layout`
-  (commit `dd96e7c`). Byte-identical writer output to pandoc running the
+Readers: `native`, `djot`, `html`. Writers: `native`, `djot`, `html`,
+`plain`, `markdown`, `latex`, `epub`. Everything below is summarized;
+CHANGELOG / git log has the detail.
+
+- **Rust core + Lua bridge + pandoc-compatible CLI** — commit `4ef7007`.
+  AST lives in Lua; `src/ast.rs` is a reference shape, not on the hot
+  path. One Lua state per conversion; `pandoc.read`/`pandoc.write`
+  recurse via fresh sub-states.
+- **`native` reader/writer** — commit `4ef7007`.
+- **`djot`** — commit `dd96e7c`. Vendored `jgm/djot.lua` + pure-Lua
+  `pandoc.layout`. Byte-identical writer output to pandoc running the
   same vendored script.
-- **HTML writer** (commit `1875e27`) — pure-Lua, ~340 lines at
-  `scripts/writers/html.lua`. `minipandoc -f djot -t html input.dj` now
-  produces a real deliverable. Semantic round-trip parity against
-  pandoc's HTML reader (strict for clean fixtures; smoke-tested where
-  HTML can't preserve `Quoted`, `Math`, or raw formats losslessly).
-- **Plain writer** (commit `93fdb9f`) — pure-Lua plain writer at
-  `scripts/writers/plain.lua`. Unblocks djot's complex-table fallback
-  (`pandoc.write(el, "plain")` no longer errors). Byte-parity with
-  `pandoc -t plain` on focused fixtures; complex grid tables emitted
-  but not byte-matched.
-- **Template engine** (commit `f9dabf6`) — pure-Lua doctemplates port at
-  `scripts/template.lua` exposing `pandoc.template.{compile,apply,
-  default,meta_to_context}`. Supports `$var$`, `$if/$else/$endif$`,
-  `$for/$sep/$endfor$`, `$$`, dotted paths, and pandoc's whitespace
-  rule for line-only directives. `--template`, `-V`, and `-M` all
-  flow through. Bundled `default.html` and `default.plain`; the
-  format registry searches `templates/` under data dirs before
-  falling back to the bundled defaults. Replaces the html writer's
-  hardcoded HTML5 shell.
-- **Markdown writer** — pure-Lua pandoc-flavored markdown writer at
-  `scripts/writers/markdown.lua` (~600 lines). ATX headers with attr
-  blocks, pipe + grid tables, fenced code with info-string, fenced
-  divs, footnotes collected to end-of-document, YAML front-matter via
-  bundled `default.markdown` template. Parity test skips gracefully
-  when pandoc isn't on PATH; smoke-only fallback for fixtures where
-  we intentionally diverge (curly quotes, grid-table widths, escape
-  set). `minipandoc -f djot -t markdown input.dj` now works.
-- **LaTeX writer** — pure-Lua LaTeX writer at `scripts/writers/latex.lua`
-  (~500 lines). Section commands with `\hypertarget`/`\label` wrapping
-  for ids, `enumitem`-style ordered list labels, `longtable` with
-  booktabs rules for simple tables (verbatim-wrapped plain fallback for
-  complex), `\footnote{}` inline, `\href`/`\hyperlink` for external vs
-  internal links, `\includegraphics` with width/height attrs, figure
-  environment with caption/label, `\verb` with auto delimiter picking
-  for inline code. Bundled `default.latex` template ships a minimal
-  `article` preamble (hyperref, graphicx, ulem, longtable, booktabs).
-  `minipandoc -f djot -t latex -s input.dj` now produces a full
-  compilable document.
-- **WASI build** — the existing CLI binary cross-compiles to
-  `wasm32-wasip1` unchanged. `scripts/build-wasm.sh` drives the build;
-  it auto-provisions a pinned wasi-sdk (clang + sysroot) under
-  `$XDG_CACHE_HOME/minipandoc/` on first run, so zero host setup is
-  required beyond rustup.
-  `tests/wasi/run-wasi.mjs` runs the `.wasm` under Node's WASI shim;
-  `tests/wasi_smoke.rs` is a cargo-integrated smoke test that verifies
-  mlua + vendored Lua 5.4 boots and converts djot → html in the wasm
-  sandbox. Release wasm: **1.3 MB raw, 399 KB gzipped** — roughly 1/15
-  the size of pandoc-wasm, matching the success signal.
-- **HTML reader** — pure-Lua reader at `scripts/readers/html.lua`.
-  Handwritten tokenizer + block/inline parser (no vendored parser, no
-  LPeg) producing pandoc AST directly. Self round-trips against our
-  writer on all shareable fixtures and matches pandoc's HTML reader
-  semantically on the hand-written `tests/fixtures/html/` fixtures
-  (pandoc's syntax-highlighted `sourceCode` soup is smoke-tested only).
-  Unknown tags fall back to `RawInline`/`RawBlock (html)`; footnote
-  refs + `<section id="footnotes">` are reconstructed back into
-  pandoc `Note` elements; `<span class="math">` only recovers to
-  `Math` when the content is wrapped in `\(…\)` / `\[…\]` (our
-  writer's form) — otherwise it stays as `Span`, matching pandoc's
-  reader behavior on rendered-HTML math. `minipandoc -f html -t native
-  input.html` now works.
-- **Browser target** — the same WASI binary runs unchanged in the
-  browser under a pure-JS WASI shim. Vendored
-  [`@bjorn3/browser_wasi_shim`](https://github.com/bjorn3/browser_wasi_shim)
-  (~20 KB min, zero deps) at `scripts/vendor/browser_wasi_shim/`
-  implements `wasi_snapshot_preview1`; `web/minipandoc.mjs` is a small
-  ES-module loader exposing `convert(input, from, to, { standalone })`;
-  `web/index.html` is a working demo. `scripts/serve-browser-demo.sh`
-  starts `python3 -m http.server` after verifying a release wasm is
-  built. No emscripten, no `wasm32-unknown-unknown`, no Luau — the
-  browser path is a pure JS layer over the existing Lua-5.4-backed
-  WASI artifact, so pandoc Lua filters keep working unmodified. Still
-  open: a markdown reader (success signal #3's final piece) and a
-  packaged npm distribution.
-- **`--embed-resources`** — HTML writer inlines referenced `<img src>`
-  attributes as `data:<mime>;base64,…` URIs and rewrites the default
-  template's `$for(css)$<link>` loop into inline `<style>` blocks via
-  `header-includes`. Implies `--standalone`. Rust adds two primitives
-  exposed to Lua: `pandoc.mediabag.fetch(source)` (local files only;
-  URLs and `data:` sources return `nil, err`) and
-  `pandoc._internal.base64_encode(bytes)`. Local paths only;
-  `<script src>`, `<video>/<audio>/<source>`, `<embed>`, `<iframe>`,
-  and recursive `url(...)` rewriting inside inlined CSS remain future
-  work (the HTML writer doesn't emit the former constructs yet). See
-  [`notes/embed-resources-url-fetching.md`](notes/embed-resources-url-fetching.md)
-  for why URL fetching was deferred.
+- **`html` writer** — commit `1875e27`. Pure-Lua, ~340 lines.
+- **`plain` writer** — commit `93fdb9f`. Unblocks djot's complex-table
+  fallback; byte-parity with `pandoc -t plain` on focused fixtures.
+- **Template engine** — commit `f9dabf6`. Pure-Lua doctemplates subset
+  (`$var$`, `$if/$else/$endif$`, `$for/$sep/$endfor$`, `$$`, dotted
+  paths, pandoc's whitespace rule). Bundled `default.{html,plain,
+  markdown,latex}`. `--template`, `-V`, `-M` all flow through.
+- **`markdown` writer** — pandoc-flavored, ~600 lines, ATX headers,
+  pipe + grid tables, fenced code/divs, footnotes collected to
+  end-of-document, YAML front-matter.
+- **`latex` writer** — ~500 lines, `longtable`+booktabs for simple
+  tables, figure environments, `\hyperlink`/`\href`, `\includegraphics`,
+  `\verb` with auto-delimiter pick. `default.latex` ships a minimal
+  `article` preamble. Pandoc 3.x parity via phantomsection/label
+  (commit `ab5c1fc`).
+- **`epub` writer** — commits `4a0eb35`, `0318284`, `f4d5ca2`. First
+  binary format. Rust-backed `pandoc.zip.create()` +
+  `ByteStringWriter`. 9 integration tests.
+- **`html` reader** — handwritten tokenizer + block/inline parser, no
+  vendored parser, no LPeg. Unknown tags degrade to
+  `RawInline`/`RawBlock (html)`; footnote refs + `<section
+  id="footnotes">` reconstruct pandoc `Note` elements.
+- **WASI build** — `wasm32-wasip1` cross-compile, auto-provisioned
+  wasi-sdk. `tests/wasi_smoke.rs` runs the artifact under Node's WASI
+  shim. Release wasm: 1.3 MB raw / 399 KB gzipped.
+- **Browser target** — same WASI binary runs unchanged under
+  vendored `@bjorn3/browser_wasi_shim` (~20 KB). `web/minipandoc.mjs`
+  is the ES-module loader; `web/index.html` is the demo. Pandoc Lua
+  filters work unmodified because the browser path is pure JS over the
+  existing Lua-5.4-backed WASI artifact.
+- **`--embed-resources`** — HTML writer inlines `<img src>` as
+  `data:` URIs and rewrites `$for(css)$<link>` to inline `<style>`
+  via `header-includes`. Implies `--standalone`. New primitives:
+  `pandoc.mediabag.fetch` (local files; URLs return `nil, err`) and
+  `pandoc._internal.base64_encode`. Local paths only; scripts,
+  media tags, and recursive CSS `url(...)` rewriting deferred. See
+  [`notes/embed-resources-url-fetching.md`](notes/embed-resources-url-fetching.md).
+- **Benchmark harness** — `bench/bench_vs_pandoc.sh` runs hyperfine
+  head-to-head against pandoc. Framework + parity work landed across
+  `32c829b` → `f2042c8`; tracked result as of `f2042c8`:
+  **3/5 formats at parity (djot, plain, markdown)**; html and latex
+  still have gaps.
 
-## Medium-term
+## Next (committed work)
 
-The near-term queue is empty — pick the next item from this list based
-on what unblocks the most user-visible value.
+Priority-ordered. Each is scoped small enough to ship as its own
+milestone.
 
-### Markdown reader — the hardest single piece
+### 1. Close the remaining benchmark-parity gaps
 
-The original plan flagged this: pandoc's Haskell markdown reader is
-~5000 lines with decades of accumulated fixes. Don't start from scratch
-in Lua. Options:
-1. Vendor `cmark-lua` (CommonMark baseline) + write extension layers on
-   top for pandoc-specific syntax.
-2. Adapt an existing LPeg-based markdown parser.
-3. Call out to a native-code parser via a Rust-side helper.
+Two formats still diverge from pandoc's byte output: **html** and
+**latex**. The harness exists and the fixtures exist; this is a
+finish-the-work item, not a design item. Goal: 5/5 at parity.
 
-Pick an approach before committing. Expect weeks of iteration against
-pandoc's test corpus.
+### 2. npm package for the WASM build
 
-## Longer-term
+The browser target works end-to-end and the wasm is 399 KB gzipped.
+Packaging unblocks downstream adoption and exercises the stable
+public API surface (`convert(input, from, to, opts)` in
+`web/minipandoc.mjs`). Success-signal #4 depends on this.
 
-### Binary formats (docx, epub, ODT)
+### 3. Markdown reader — approach decision + prototype
 
-Need Rust-side helpers exposed to Lua:
-- `pandoc.zip.read(path)` / `write(path, entries)`
-- `pandoc.xml.parse(text)` / `serialize(table)`
+Still the hardest single piece. Pandoc's Haskell markdown reader is
+~5000 lines of accumulated edge cases. **Recommended approach:
+vendor `cmark-lua` as the CommonMark baseline, layer pandoc-specific
+extensions (attributes, fenced divs, footnotes, tables, raw
+blocks) on top in our own Lua.** Rationale:
 
-Add `zip` and `quick-xml` to `Cargo.toml` when this starts. Writers
-proceed roughly like the text formats once these primitives exist.
+- Matches the EPUB / djot precedent (vendor upstream + thin shim),
+  not the "zero format knowledge in Rust" precedent (rules out option
+  3 — native parser via Rust helper).
+- Keeps the Lua-filter pipeline intact.
+- An LPeg-based parser (option 2) would require vendoring LPeg into
+  the Lua build, which we've so far avoided.
 
-### RST, Org-mode, JATS, AsciiDoc
+Expect weeks of iteration against pandoc's test corpus. Track parity
+the same way we track djot: compare AST against pandoc on a shared
+fixture set.
 
-Medium-effort text formats. Each benefits from the layout engine and
-whatever HTML/markdown scaffolding has already landed.
+Completing this checks success-signal #3 off the list.
+
+## Polish
+
+Small, individually tractable items mostly surfaced in CLAUDE.md's
+"Known limitations" section. Can be picked up opportunistically
+between milestones.
+
+- **Template engine**: partials (`${name}`), `$var/pattern/repl$`
+  filters.
+- **Plain writer**: byte-match pandoc's column-width algorithm for
+  complex tables; implement texmath (Unicode rendering for `Math`
+  elements) instead of raw TeX passthrough.
+- **Native writer**: pretty-printing to match pandoc's output form.
+- **`--embed-resources`**: `<script src>`, `<video>`/`<audio>`/
+  `<source>`, `<embed>`, `<iframe>`, recursive `url(...)` rewriting
+  inside inlined CSS.
+- **`pandoc.mediabag.*`** / **`pandoc.system.*`**: flesh out the
+  stubs as individual writers need them.
+- **`pandoc.layout`**: fill in combinators as new writers expose
+  gaps.
+
+## Larger efforts
+
+### Binary formats — docx, ODT
+
+EPUB landed the ZIP primitive (`pandoc.zip.create`). docx/ODT add
+**XML**: `pandoc.xml.parse(text)` / `serialize(table)` backed by
+`quick-xml` on the Rust side. Once that primitive exists, writers
+follow the same shape as the EPUB writer. docx has more user demand
+than ODT; tackle it first.
+
+### Additional text formats
+
+RST, Org-mode, JATS, AsciiDoc. Medium-effort each, benefit from the
+layout engine and whatever markdown scaffolding has landed. Pick by
+demand.
+
+### Reader coverage for existing writers
+
+Right now we read native / djot / html but write seven formats. A
+markdown reader lands with Next #3; LaTeX, EPUB, and RST readers
+are plausible follow-ups, each a sub-project of its own.
 
 ### Citeproc
 
-Citation processing is a major sub-project. Defer until there's demand.
+Citation processing is a major sub-project. Defer until there's
+demand.
 
-### Extended compatibility
+### Syntax highlighting
 
-- YAML metadata parsing
-- Syntax highlighting (integrate a Lua library or expose `syntect`)
-- PDF output via external engines
-- JSON filter protocol (lower priority — Lua filters are preferred)
+Integrate a Lua library or expose `syntect` from Rust. Non-trivial
+surface area; defer until a writer needs it.
+
+### PDF output
+
+Via external engines (xelatex, tectonic). Mostly a CLI + subprocess
+wiring problem once the LaTeX writer is at parity.
+
+### JSON filter protocol
+
+Lower priority — Lua filters are the preferred path and already work.
 
 ## Packaging & distribution
 
+### Next release
+
 - `cargo install minipandoc`
-- npm package for the WASM build
-- Homebrew, Debian package
-- `minipandoc --install-format markdown` — fetch format scripts on demand
-- Format scripts as a separate repository once there are enough to need
-  independent release cadence
+- npm package for the WASM build (see Next #2)
+
+### Future
+
+- Homebrew tap, Debian package
+- `minipandoc --install-format <name>` — fetch format scripts on
+  demand
+- Format scripts extracted to a separate repository once the count
+  justifies independent release cadence
+
+## Performance
+
+Explicit goal: **match or beat pandoc per format, per conversion
+direction**. The benchmark harness at `bench/bench_vs_pandoc.sh`
+tracks this; current state is 3/5 input formats at parity after the
+push in Next #1. Record regressions as they land rather than
+batch-fixing later.
+
+## Filter ecosystem compatibility
+
+Success-signal #2 ("an existing pandoc Lua filter runs unmodified")
+was demonstrated for native and djot but hasn't been re-verified
+per format. Track a small canonical set of third-party filters and
+re-run them against each writer on release. Candidates:
+- `pandoc-lua-filters/` collection (per-element transforms)
+- simple AST rewriters (walk-and-replace patterns)
+- stubs for `pandoc-crossref`, `pandoc-citeproc` (parity for
+  surface API only; full citeproc is a separate effort)
+
+Add a CI job that runs the filter set once the list exists.
 
 ## Success signals
 
 The project matters when:
-1. A user writes `minipandoc -f djot -t html input.dj` (Phase: HTML writer).
-2. An existing pandoc Lua filter runs unmodified against minipandoc (Phase: done for `native`/`djot`, re-verify per format).
-3. The WASM build loads in a browser and converts markdown to HTML under 1 MB compressed (Phase: markdown reader + WASM).
-4. A downstream project depends on minipandoc's format scripts (Phase: packaging).
+
+1. A user writes `minipandoc -f djot -t html input.dj`. **Done.**
+2. An existing pandoc Lua filter runs unmodified against minipandoc.
+   **Done** for `native`/`djot`; re-verify per format (see Filter
+   ecosystem compatibility above).
+3. The WASM build loads in a browser and converts markdown to HTML
+   under 1 MB compressed. **Partially done** — browser target works,
+   wasm is 399 KB gzipped (well under the cap); markdown reader is
+   the final blocker.
+4. A downstream project depends on minipandoc's format scripts.
+   **Open** — gated on packaging (Next #2).

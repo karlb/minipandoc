@@ -19,8 +19,9 @@ Committed milestones:
 - `93fdb9f` — Plain writer (unblocks djot's complex-table fallback).
 - `f9dabf6` — Template engine (`pandoc.template.*`, bundled defaults).
 
-25 tests pass (`cargo test`), including parity against real pandoc when
-it's on PATH (tests skip gracefully otherwise).
+55 tests pass (`cargo test`) across 13 integration suites, including
+parity against real pandoc when it's on PATH (tests skip gracefully
+otherwise).
 
 ## Build & test
 
