@@ -1104,4 +1104,11 @@ function pandoc._internal.escape_html_attr(s)
   return s
 end
 
+-- Expose lpeg and re under pandoc.* to match pandoc's convention for
+-- custom readers. Preloaded from the Rust bootstrap.
+local ok_lpeg, lpeg = pcall(require, "lpeg")
+if ok_lpeg then pandoc.lpeg = lpeg end
+local ok_re, re = pcall(require, "re")
+if ok_re then pandoc.re = re end
+
 return pandoc

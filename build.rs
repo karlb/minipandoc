@@ -16,8 +16,23 @@ use std::path::{Path, PathBuf};
 fn main() {
     let vendor_dir = Path::new("scripts/vendor/djot");
     println!("cargo:rerun-if-changed=scripts/vendor/djot");
+    println!("cargo:rerun-if-changed=scripts/vendor/lpeg");
 
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR"));
+
+    // Compile LPeg against the same Lua headers mlua vendors. `lua-src`
+    // is also an (indirect) dep of mlua-sys; Cargo dedupes so this only
+    // adds the include-path lookup, no extra link artifact surfaces.
+    let lua_artifacts = lua_src::Build::new().build(lua_src::Lua54);
+    let lpeg = Path::new("scripts/vendor/lpeg");
+    cc::Build::new()
+        .files([
+            "lpcap.c", "lpcode.c", "lpcset.c",
+            "lpprint.c", "lptree.c", "lpvm.c",
+        ].iter().map(|f| lpeg.join(f)))
+        .include(lua_artifacts.include_dir())
+        .warnings(false)
+        .compile("lpeg");
 
     // Modules bundled into both reader and writer. The vendored djot-writer.lua
     // doesn't require() any djot modules, but shipping them doesn't hurt and
