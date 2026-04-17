@@ -71,33 +71,13 @@ const SMOKE_ONLY: &[&str] = &[
     // Our escape set is broader (e.g. we emit \textasciitilde{} where
     // pandoc uses \textasciitilde\ ).
     "escapes.native",
-    // Header hypertarget+label nesting has version-specific differences.
-    "header_attrs.native",
-    // Subscript/superscript/smallcaps exact command choice varies.
-    "inlines_extra.native",
-    // Curly-quote TeX sequences match pandoc conceptually but not
-    // always byte-for-byte across versions.
-    "quoted.native",
     // Table column spec formatting (`@{}ll@{}` vs `lcr`) varies.
     "table.native",
     // Complex tables are wrapped in verbatim — structurally different
     // from pandoc which uses full longtable with nested minipages.
     "complex_table.native",
-    // Figure emits `\begin{figure}` only when a Figure AST node is
-    // present; pandoc may also promote a Para-with-Image paragraph to
-    // a figure environment based on extension flags.
-    "figure.native",
-    // Pandoc emits \newpage etc. around LineBlocks; we don't.
-    "breaks.native",
-    // Metadata is a doc-level thing; non-standalone mode differs.
-    "meta.native",
     // DefinitionList loose-vs-tight and \tightlist placement vary.
     "lists.native",
-    // Footnote placement and \par usage varies with pandoc version.
-    "footnote.native",
-    // Mixed inline features — SmallCaps/Math/Quoted all have minor
-    // divergences and the fixture combines several.
-    "inlines.native",
     // Pandoc syntax-highlights code blocks that have a language class
     // (Shaded/Highlighting); we emit \begin{verbatim}.
     "codeblock.native",

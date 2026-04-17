@@ -104,7 +104,7 @@ end
 Inlines.Emph        = wrap_cmd("emph")
 Inlines.Strong      = wrap_cmd("textbf")
 Inlines.Underline   = wrap_cmd("uline")
-Inlines.Strikeout   = wrap_cmd("sout")
+Inlines.Strikeout   = wrap_cmd("st")
 Inlines.Superscript = wrap_cmd("textsuperscript")
 Inlines.Subscript   = wrap_cmd("textsubscript")
 Inlines.SmallCaps   = wrap_cmd("textsc")
@@ -130,8 +130,8 @@ Inlines.Cite = function(el)
 end
 
 Inlines.Code = function(el)
-  local text = el.text or ""
-  return literal("\\texttt{" .. escape_str(text) .. "}")
+  local text = escape_str(el.text or ""):gsub(" ", "\\ ")
+  return literal("\\texttt{" .. text .. "}")
 end
 
 Inlines.Math = function(el)
@@ -190,30 +190,34 @@ Inlines.Image = function(el)
 end
 
 Inlines.Note = function(el)
-  -- Render footnote body inline. Multi-paragraph bodies are separated
-  -- by \par. We render to a string using an unlimited wrap width so the
-  -- \footnote{...} stays on one logical line (rewrapping is LaTeX's job).
+  -- Render footnote body as a layout doc so the outer \footnote{...}
+  -- can wrap inside the braces (matches pandoc's hanging-indent form:
+  -- `\footnote{long body...\n  continuation}`). Multi-paragraph bodies
+  -- separate with `\par`.
   local parts = {}
   for i, b in ipairs(el.content or {}) do
     if i > 1 then parts[#parts+1] = literal("\\par ") end
     local fn = Blocks[b.tag]
     if fn then parts[#parts+1] = fn(b) end
   end
-  local body = layout.render(concat(parts), math.huge)
-  body = body:gsub("\n+$", "")
-  body = body:gsub("\n", " ")
-  return literal("\\footnote{" .. body .. "}")
+  return concat{ literal("\\footnote{"), layout.nest(concat(parts), 2), literal("}") }
 end
 
 Inlines.Span = function(el)
   local content = inlines(el.content)
   if el.attr and el.attr.identifier and el.attr.identifier ~= "" then
     return concat{
-      literal("\\protect\\phantomsection\\label{" .. el.attr.identifier .. "}"),
+      literal("\\protect\\phantomsection\\label{" .. el.attr.identifier .. "}{"),
       content,
+      literal("}"),
     }
   end
-  return content
+  for _, c in ipairs(el.attr and el.attr.classes or {}) do
+    if c == "mark" then
+      return concat{ literal("\\hl{"), content, literal("}") }
+    end
+  end
+  return concat{ literal("{"), content, literal("}") }
 end
 
 -- ---------------------------------------------------------------------------
@@ -442,10 +446,10 @@ Blocks.Div = function(el)
     return blocks(content_blocks, blankline)
   end
 
-  -- Non-section Div with ID: emit \phantomsection\label{id} before content.
+  -- Non-section Div with ID: emit \protect\phantomsection\label{id} before content.
   if id then
     return concat{
-      literal("\\phantomsection\\label{" .. id .. "}"), blankline,
+      literal("\\protect\\phantomsection\\label{" .. id .. "}"), cr,
       blocks(content_blocks, blankline),
     }
   end
