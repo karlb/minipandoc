@@ -328,3 +328,29 @@ fn attach_meta_by_tag(dst: &Lua, t: &Table, tag: &str) -> Result<(), mlua::Error
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::base64_encode;
+
+    // RFC 4648 test vectors — cover every padding case (len mod 3 ∈ {0,1,2}).
+    #[test]
+    fn rfc4648_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    // 0xFF exercises the top bit of each sextet — catches accidental sign
+    // extension or `& 0x3f` mistakes.
+    #[test]
+    fn high_bytes_and_boundaries() {
+        assert_eq!(base64_encode(&[0xff]), "/w==");
+        assert_eq!(base64_encode(&[0xff, 0xff]), "//8=");
+        assert_eq!(base64_encode(&[0xff, 0xff, 0xff]), "////");
+    }
+}
