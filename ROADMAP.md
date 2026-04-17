@@ -74,26 +74,30 @@ Packaging unblocks downstream adoption and exercises the stable
 public API surface (`convert(input, from, to, opts)` in
 `web/minipandoc.mjs`). Success-signal #4 depends on this.
 
-### 2. Markdown reader — approach decision + prototype
+### 2. Markdown reader — iterate on parity
 
-Still the hardest single piece. Pandoc's Haskell markdown reader is
-~5000 lines of accumulated edge cases. **Recommended approach:
-vendor `cmark-lua` as the CommonMark baseline, layer pandoc-specific
-extensions (attributes, fenced divs, footnotes, tables, raw
-blocks) on top in our own Lua.** Rationale:
+Landed (commit will be labelled once squash/push happens): LPeg 1.1.0
++ `jgm/lunamark` are vendored; `scripts/readers/markdown.lua` is an
+in-tree bridge that drives lunamark with a handwritten pandoc-AST
+writer. 7 of 15 canonical fixtures pass strict AST parity with
+pandoc 3.9; 8 are smoke-only pending follow-ups (see
+`tests/markdown_reader_parity.rs` `SMOKE_ONLY` and the "Known
+limitations" section of `CLAUDE.md`). `cmark-lua` (the ROADMAP's
+original recommendation) turned out to be a SWIG wrapper around
+`libcmark` — not portable to `wasm32-wasip1` — so we went with
+LPeg + lunamark instead, matching pandoc's own custom-reader
+convention (`pandoc.lpeg` / `pandoc.re`).
 
-- Matches the EPUB / djot precedent (vendor upstream + thin shim),
-  not the "zero format knowledge in Rust" precedent (rules out option
-  3 — native parser via Rust helper).
-- Keeps the Lua-filter pipeline intact.
-- An LPeg-based parser (option 2) would require vendoring LPeg into
-  the Lua build, which we've so far avoided.
+Next iterations, in rough priority order:
+- Unindented footnote bodies (pandoc's default writer form).
+- Nested bullet / ordered lists (biggest semantic gap).
+- Key-value attribute propagation on headers / link_attributes.
+- Pandoc's "simple" indented table form.
+- Grid tables (lunamark doesn't parse these at all).
+- `escaped_line_breaks` → SoftBreak parity.
 
-Expect weeks of iteration against pandoc's test corpus. Track parity
-the same way we track djot: compare AST against pandoc on a shared
-fixture set.
-
-Completing this checks success-signal #3 off the list.
+This unblocks success-signal #3 end-to-end; the parity scorecard
+will catch regressions as each gap closes.
 
 ## Polish
 
@@ -201,8 +205,10 @@ The project matters when:
    **Done** for `native`/`djot`; re-verify per format (see Filter
    ecosystem compatibility above).
 3. The WASM build loads in a browser and converts markdown to HTML
-   under 1 MB compressed. **Partially done** — browser target works,
-   wasm is 399 KB gzipped (well under the cap); markdown reader is
-   the final blocker.
+   under 1 MB compressed. **Done for the MVP cut** — browser target
+   works, wasm is 565 KB gzipped (raised from 399 KB by bundled LPeg
+   + lunamark; still well under the 1 MB cap), markdown reader
+   shipped in the same commit. Ongoing parity work is iterative (see
+   Next #2), not a blocker for success-signal #3.
 4. A downstream project depends on minipandoc's format scripts.
    **Open** — gated on packaging (Next #2).
