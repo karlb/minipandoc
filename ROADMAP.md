@@ -58,29 +58,23 @@ CHANGELOG / git log has the detail.
   [`notes/embed-resources-url-fetching.md`](notes/embed-resources-url-fetching.md).
 - **Benchmark harness** — `bench/bench_vs_pandoc.sh` runs hyperfine
   head-to-head against pandoc. Framework + parity work landed across
-  `32c829b` → `f2042c8`; tracked result as of `f2042c8`:
-  **3/5 formats at parity (djot, plain, markdown)**; html and latex
-  still have gaps.
+  `32c829b` → `f2042c8`; writer-level parity closeouts landed in
+  `1360cca` (djot input, 3/5 → 5/5) and `24fdaff` (html input,
+  0/4 → 4/4). Both scorecards now at full parity against pandoc 3.9.
 
 ## Next (committed work)
 
 Priority-ordered. Each is scoped small enough to ship as its own
 milestone.
 
-### 1. Close the remaining benchmark-parity gaps
-
-Two formats still diverge from pandoc's byte output: **html** and
-**latex**. The harness exists and the fixtures exist; this is a
-finish-the-work item, not a design item. Goal: 5/5 at parity.
-
-### 2. npm package for the WASM build
+### 1. npm package for the WASM build
 
 The browser target works end-to-end and the wasm is 399 KB gzipped.
 Packaging unblocks downstream adoption and exercises the stable
 public API surface (`convert(input, from, to, opts)` in
 `web/minipandoc.mjs`). Success-signal #4 depends on this.
 
-### 3. Markdown reader — approach decision + prototype
+### 2. Markdown reader — approach decision + prototype
 
 Still the hardest single piece. Pandoc's Haskell markdown reader is
 ~5000 lines of accumulated edge cases. **Recommended approach:
@@ -181,8 +175,8 @@ Lower priority — Lua filters are the preferred path and already work.
 
 Explicit goal: **match or beat pandoc per format, per conversion
 direction**. The benchmark harness at `bench/bench_vs_pandoc.sh`
-tracks this; current state is 3/5 input formats at parity after the
-push in Next #1. Record regressions as they land rather than
+tracks this; current state against pandoc 3.9 is djot 5/5 and
+html 4/4 at parity. Record regressions as they land rather than
 batch-fixing later.
 
 ## Filter ecosystem compatibility
