@@ -232,7 +232,7 @@ fn apply_filter(
         .load(&src)
         .set_name(&chunk_name)
         .eval::<Value>()
-        .unwrap_or(Value::Nil);
+        .map_err(|e| Error::Lua(format!("loading filter {}: {e}", filter_path.display())))?;
 
     let filters: Vec<mlua::Table> = match filter_result {
         Value::Table(t) => {
