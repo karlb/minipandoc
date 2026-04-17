@@ -92,8 +92,8 @@ end
 -- ---------------------------------------------------------------------------
 
 Inlines.Str = function(el) return literal(escape_text(el.text)) end
-Inlines.Space = function() return literal(" ") end
-Inlines.SoftBreak = function() return cr end
+Inlines.Space = function() return layout.space end
+Inlines.SoftBreak = function() return layout.space end
 Inlines.LineBreak = function() return concat{ literal("<br />"), cr } end
 
 local function wrap_tag(name)
@@ -271,7 +271,7 @@ end
 
 Blocks.CodeBlock = function(el)
   return concat{ literal("<pre><code" .. render_attrs(el.attr) .. ">"),
-                 literal(escape_text(el.text)),
+                 literal(escape_attr(el.text)),
                  literal("</code></pre>") }
 end
 
@@ -316,9 +316,40 @@ local function attr_without_class(attr, drop_class)
 end
 
 Blocks.Div = function(el)
-  -- Emit <section> for Divs with "section" class so pandoc's HTML reader
-  -- reconstructs them as section-Divs on round-trip.
   if has_class(el.attr, "section") then
+    -- Pandoc unwraps section-Divs whose first child is a Header without
+    -- its own id: the Div's id + remaining attrs are hoisted onto that
+    -- Header and the wrapper is dropped. Only keep <section> when the
+    -- inner Header already has an id (pandoc's fallback).
+    local first = el.content and el.content[1]
+    if first and first.tag == "Header"
+       and (not first.attr or not first.attr.identifier or first.attr.identifier == "")
+       and el.attr and el.attr.identifier and el.attr.identifier ~= "" then
+      local div_trim = attr_without_class(el.attr, "section")
+      local h_classes = {}
+      for _, c in ipairs(first.attr and first.attr.classes or {}) do
+        h_classes[#h_classes+1] = c
+      end
+      for _, c in ipairs(div_trim.classes or {}) do
+        h_classes[#h_classes+1] = c
+      end
+      local h_attrs = {}
+      for _, p in ipairs(first.attr and first.attr.attributes or {}) do
+        h_attrs[#h_attrs+1] = { p[1], p[2] }
+      end
+      for _, p in ipairs(div_trim.attributes or {}) do
+        h_attrs[#h_attrs+1] = { p[1], p[2] }
+      end
+      local rewritten = {
+        tag = "Header",
+        level = first.level,
+        content = first.content,
+        attr = pandoc.Attr(div_trim.identifier, h_classes, h_attrs),
+      }
+      local children = { rewritten }
+      for i = 2, #el.content do children[#children+1] = el.content[i] end
+      return blocks(children, cr)
+    end
     local trimmed = attr_without_class(el.attr, "section")
     return concat{ literal("<section" .. render_attrs(trimmed) .. ">"), cr,
                    blocks(el.content, cr), cr,

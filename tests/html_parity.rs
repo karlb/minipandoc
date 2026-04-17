@@ -59,9 +59,15 @@ fn run_pandoc(args: &[&str], stdin_bytes: &[u8]) -> String {
 fn normalize_for_html(s: &str) -> String {
     // OrderedList delimiter style is not representable in HTML — the reader
     // always produces DefaultDelim.
+    //
+    // SoftBreak and Space are interchangeable in HTML round-trips: the
+    // reader emits SoftBreak when a line break appears in inline content,
+    // Space when words are separated by a literal space. Our layout engine
+    // and pandoc's wrap at different columns, so treat them as equivalent.
     s.replace(", Period )", ", DefaultDelim )")
         .replace(", OneParen )", ", DefaultDelim )")
         .replace(", TwoParens )", ", DefaultDelim )")
+        .replace("SoftBreak", "Space")
 }
 
 fn all_fixtures() -> Vec<PathBuf> {
@@ -128,15 +134,28 @@ fn round_trip_semantic_parity() {
             &["-f", "html-auto_identifiers", "-t", "native"],
             our_html.as_bytes(),
         );
-        // Normalize both sides through pandoc-native so whitespace/layout
-        // differences don't matter.
-        let our_norm = run_pandoc(
-            &["-f", "native", "-t", "native"],
-            our_native.as_bytes(),
+        // Collapse SoftBreak→Space before normalizing, so pandoc's native
+        // pretty-printer doesn't diverge on break-vs-space layout choices.
+        let our_pre = normalize_for_html(&our_native);
+        let orig_pre = normalize_for_html(
+            &String::from_utf8(std::fs::read(&fx).unwrap()).unwrap(),
         );
+        let our_norm = run_pandoc(&["-f", "native", "-t", "native"], our_pre.as_bytes());
+        // Apply the same section-Div hoisting pandoc's HTML writer does
+        // (unwraps `Div ("id", ["section"])` onto the first Header child)
+        // so the fixture-side AST lines up with our round-trip output.
+        let filter_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/common/unwrap_sections.lua");
         let orig_norm = run_pandoc(
-            &["-f", "native", "-t", "native"],
-            std::fs::read(&fx).unwrap().as_slice(),
+            &[
+                "-f",
+                "native",
+                "-t",
+                "native",
+                "--lua-filter",
+                filter_path.to_str().unwrap(),
+            ],
+            orig_pre.as_bytes(),
         );
 
         if is_smoke_only(&fx) {
@@ -149,8 +168,8 @@ fn round_trip_semantic_parity() {
             continue;
         }
 
-        let ours = normalize_for_html(&our_norm);
-        let orig = normalize_for_html(&orig_norm);
+        let ours = our_norm.clone();
+        let orig = orig_norm.clone();
         if ours != orig {
             failures.push(format!(
                 "--- {name} ---\n--- ours ---\n{ours}\n--- original ---\n{orig}\n"

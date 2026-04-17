@@ -69,9 +69,11 @@ fn run_pandoc(args: &[&str], stdin_bytes: &[u8]) -> String {
 
 /// Normalize unavoidable HTML round-trip losses.
 fn normalize_for_html(s: &str) -> String {
+    // SoftBreak ↔ Space: equivalent in HTML round-trips (see html_parity.rs).
     s.replace(", Period )", ", DefaultDelim )")
         .replace(", OneParen )", ", DefaultDelim )")
         .replace(", TwoParens )", ", DefaultDelim )")
+        .replace("SoftBreak", "Space")
 }
 
 fn all_native_fixtures() -> Vec<PathBuf> {
@@ -135,13 +137,31 @@ fn self_round_trip() {
             None,
             Some(our_html.as_bytes()),
         );
-        let our_norm = run_pandoc(&["-f", "native", "-t", "native"], our_native.as_bytes());
-        let orig_norm = run_pandoc(
-            &["-f", "native", "-t", "native"],
-            std::fs::read(&fx).unwrap().as_slice(),
+        // Collapse SoftBreak→Space before pandoc's native normalizer so it
+        // doesn't diverge on break-vs-space layout choices.
+        let our_pre = normalize_for_html(&our_native);
+        let orig_pre = normalize_for_html(
+            &String::from_utf8(std::fs::read(&fx).unwrap()).unwrap(),
         );
-        let ours = normalize_for_html(&our_norm);
-        let orig = normalize_for_html(&orig_norm);
+        let our_norm = run_pandoc(&["-f", "native", "-t", "native"], our_pre.as_bytes());
+        // Pandoc's HTML writer hoists a section-Div's id onto the first
+        // Header child and drops the wrapper (our writer does the same);
+        // apply the same hoist to the fixture-side AST so comparison aligns.
+        let filter_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/common/unwrap_sections.lua");
+        let orig_norm = run_pandoc(
+            &[
+                "-f",
+                "native",
+                "-t",
+                "native",
+                "--lua-filter",
+                filter_path.to_str().unwrap(),
+            ],
+            orig_pre.as_bytes(),
+        );
+        let ours = our_norm.clone();
+        let orig = orig_norm.clone();
         if ours != orig {
             failures.push(format!(
                 "--- {name} ---\n--- ours ---\n{ours}\n--- original ---\n{orig}\n"
