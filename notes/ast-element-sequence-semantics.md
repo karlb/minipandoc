@@ -1,22 +1,35 @@
 # Pandoc filter compatibility: AST element sequence semantics
 
+> **Status (2026-04-18):** this note was written against what turned out
+> to be outdated pandoc documentation. Empirical testing against **pandoc
+> 3.9** shows that it does **not** support sequence-on-element access:
+> `#el` raises *"attempt to get length of a Block/Inline value"*,
+> `el[1] = x` raises *"Cannot set unknown property"*, and `el[1]` (read)
+> returns `nil`. The canonical pandoc 3.x filter idiom is
+> `el.content[i]` / `#el.content` — exactly what minipandoc already
+> supports. The "gap" described in the rest of this document therefore
+> applies only to a pre-3.x pandoc API that minipandoc is not trying to
+> replicate. What *did* land is a real filter-compat bug fix (empty-list
+> return semantics) + a cross-writer filter-parity test, documented at
+> the bottom under **Resolution**.
+
 ## The gap
 
 Pandoc's [Lua filters guide](https://pandoc.org/lua-filters.html#type-para)
-documents that many AST element types can be "treated as a list" of their
-primary content:
+*previously* documented that many AST element types could be "treated as
+a list" of their primary content:
 
 ```lua
--- all idioms pandoc's Lua API promises
+-- idioms an older pandoc Lua API promised
 para[1]                           -- first inline
 #para                             -- inline count
 for i, inl in ipairs(para) do ... -- iterate inlines
 para[1] = pandoc.Str("x")         -- mutate first inline
 ```
 
-Real pandoc implements this because its AST elements are Haskell-backed
-**userdata**; the metatable provides `__index` / `__newindex` / `__len`
-that proxy to the underlying Haskell representation.
+Pandoc's AST elements are Haskell-backed **userdata**. In pandoc 3.x the
+metatable does *not* expose sequence semantics — the above idioms raise
+errors or silently return `nil`.
 
 Our `scripts/pandoc_module.lua` implements elements as plain Lua tables:
 
@@ -184,14 +197,52 @@ None in the AST layer. The markdown reader bypasses the issue by
 implementing its own writer bridge in-tree
 (`scripts/readers/markdown.lua`) — ~300 LOC rather than vendoring
 panluna. This is fine for one reader; if a second panluna-class
-library shows up we should land the metamethod fix instead of
-reinventing the bridge each time.
+library shows up we should revisit.
+
+## Resolution (landed)
+
+Empirical verification against **pandoc 3.9** showed that the
+sequence-on-element API this note originally proposed to add is not
+part of pandoc's 3.x filter contract. `#el`, `el[i]`, `ipairs(el)`,
+and `el[i] = x` all fail in pandoc 3.9 (errors or silent `nil`). Adding
+metamethods to make them work in minipandoc would **diverge** from
+pandoc 3.x rather than converge with it, so the proposed fix is
+deliberately *not* landing.
+
+What *did* land:
+
+1. **Bug fix in `walk_list`** (`scripts/pandoc_module.lua`). Pandoc's
+   filter convention treats a filter returning `{}` (an empty list) as
+   "delete this element." Minipandoc's walker previously required the
+   returned list to be non-empty (`#walked > 0`), causing empty
+   returns to fall through to the default branch and inject empty
+   tables into the document — which later crashed the native writer
+   with "unknown block tag: nil." The condition was relaxed to accept
+   any tag-less table as a splice (empty list → delete).
+
+2. **Cross-writer filter-parity test** (`tests/filter_parity.rs`). A
+   single filter exercising the canonical pandoc 3.x filter idioms —
+   `el.content[i]`, `#el.content`, `ipairs(el.content)`, in-place
+   content mutation, `pandoc.utils.stringify`, `pandoc.utils.type`,
+   multi-handler filter tables, nil/false/list/replacement return
+   values — is now run against **native, html, plain, markdown, and
+   latex** writers and compared to real pandoc 3.9 output (byte-parity
+   for plain; semantic parity via pandoc round-trip to native for the
+   rest). This is the concrete CI-ish corpus call-out from
+   `ROADMAP.md` → "Filter ecosystem compatibility."
+
+The panluna-style breakage documented above is still open: panluna
+branches on `type(x)` and our elements are plain tables (`"table"`)
+rather than userdata (`"userdata"`). That is a `type()` divergence,
+not a sequence-access one, and can't be closed without switching
+elements to userdata — out of scope here.
 
 ## Related
 
 - Success-signal #2 in `ROADMAP.md` ("existing pandoc Lua filter runs
-  unmodified") should be re-verified against a filter corpus that
-  exercises sequence access, not just handler-style filters.
+  unmodified") is re-verified for native/html/plain/markdown/latex
+  via `tests/filter_parity.rs`. Extend the filter or add new writers
+  as they land (epub, djot) to keep the coverage honest.
 - Pandoc Lua filter reference: <https://pandoc.org/lua-filters.html>
 - `pandoc.utils.type` already works correctly because it branches on
   the metatable, not `type()`.

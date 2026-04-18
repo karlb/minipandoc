@@ -186,25 +186,35 @@ batch-fixing later.
 ## Filter ecosystem compatibility
 
 Success-signal #2 ("an existing pandoc Lua filter runs unmodified")
-was demonstrated for native and djot but hasn't been re-verified
-per format. Track a small canonical set of third-party filters and
-re-run them against each writer on release. Candidates:
-- `pandoc-lua-filters/` collection (per-element transforms)
-- simple AST rewriters (walk-and-replace patterns)
-- stubs for `pandoc-crossref`, `pandoc-citeproc` (parity for
-  surface API only; full citeproc is a separate effort)
+is now exercised per writer by `tests/filter_parity.rs`: one filter
+that uses the canonical pandoc 3.x idioms (`el.content[i]`,
+`#el.content`, `ipairs`, in-place mutation, `pandoc.utils.stringify`
+/ `type`, multi-handler filter tables, nil/false/empty-list/splice
+return semantics) is run against native, html, plain, markdown, and
+latex, and compared to pandoc 3.9's output. Extend this filter (or
+add writer rows) as new writers land and as new idioms surface. That
+is the CI-ish corpus call-out; a vendored third-party filter
+collection remains a future option but isn't required now that the
+canonical idioms are covered end-to-end.
 
-Add a CI job that runs the filter set once the list exists.
-
-**Known gap**: pandoc elements can be treated as sequences of their
-primary content (`para[1]`, `#para`, `ipairs(para)`). Our AST
-elements are plain tables without sequence metamethods, so filters
-or libraries that use that API silently misbehave — surfaced when
-we tried vendoring `tarleb/panluna` for the markdown reader. See
+**No longer a gap**: the prior "elements as sequences" note
+(`para[1]`, `#para`, `ipairs(para)`) was based on outdated pandoc
+docs. Pandoc 3.9 does **not** support sequence-on-element access —
+`#el` raises, `el[1] = x` raises, `el[1]` (read) returns `nil` —
+so no change in minipandoc is needed to match it. See
 [`notes/ast-element-sequence-semantics.md`](notes/ast-element-sequence-semantics.md)
-for the full analysis and fix sketch. The canonical filter-corpus
-check should explicitly include sequence-access patterns, not just
-handler-style filters.
+for the empirical verification and resolution. A real bug was fixed
+in the process: our filter walker treated `return {}` (pandoc's
+idiom for "delete this element") as a no-op splice that injected an
+empty table, crashing the native writer downstream. Now `{}` deletes
+as expected.
+
+**Open gap — panluna-style libraries**: libraries like
+`tarleb/panluna` branch on `type(x)`; our elements are plain tables
+(`"table"`) rather than pandoc's userdata (`"userdata"`), so those
+libraries misidentify elements as generic containers. Closing this
+requires migrating elements to mlua userdata, which is out of scope
+for now. Document it as a deferred decision, not an easy fix.
 
 ## Success signals
 
