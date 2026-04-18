@@ -856,8 +856,8 @@ local function walk_list(list, filter, kind)
     local walked = walk_element(el, filter)
     if walked == false then
       -- delete
-    elseif type(walked) == "table" and walked.tag == nil and #walked > 0 then
-      -- list of replacements
+    elseif type(walked) == "table" and walked.tag == nil then
+      -- list of replacements (empty list = delete; pandoc idiom)
       for _, w in ipairs(walked) do out:insert(w) end
     elseif walked == nil then
       out:insert(el)
