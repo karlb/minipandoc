@@ -209,12 +209,22 @@ idiom for "delete this element") as a no-op splice that injected an
 empty table, crashing the native writer downstream. Now `{}` deletes
 as expected.
 
-**Open gap — panluna-style libraries**: libraries like
-`tarleb/panluna` branch on `type(x)`; our elements are plain tables
-(`"table"`) rather than pandoc's userdata (`"userdata"`), so those
-libraries misidentify elements as generic containers. Closing this
-requires migrating elements to mlua userdata, which is out of scope
-for now. Document it as a deferred decision, not an easy fix.
+**Wontfix — panluna-style libraries**: libraries like `tarleb/panluna`
+branch on `type(x)`; our elements are plain tables (`"table"`) rather
+than pandoc's userdata (`"userdata"`), so those libraries misidentify
+elements as generic containers. Closing this would require migrating
+AST construction back across the mlua boundary — Rust-side `UserData`
+impls and field proxies for every element type, breaking the
+"AST lives in Lua, Rust doesn't convert on the hot path" principle
+from `CLAUDE.md`, touching every reader/writer/filter path, and
+complicating `pandoc.read`/`pandoc.write` sub-state recursion (userdata
+doesn't cross Lua states). The problem has surfaced exactly once in
+project history (vendoring panluna for the markdown reader, routed
+around with a ~300-LOC in-tree bridge that ships fine). The
+cost/benefit doesn't justify the refactor. Cheaper fix if it ever
+matters: upstream a ~5-line patch to the offending library so it
+checks `el.tag ~= nil` before falling into the `ipairs` branch — one
+fix helps every plain-table-AST consumer, not just minipandoc.
 
 ## Success signals
 

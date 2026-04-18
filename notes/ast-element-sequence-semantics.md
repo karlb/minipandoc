@@ -231,11 +231,22 @@ What *did* land:
    rest). This is the concrete CI-ish corpus call-out from
    `ROADMAP.md` → "Filter ecosystem compatibility."
 
-The panluna-style breakage documented above is still open: panluna
-branches on `type(x)` and our elements are plain tables (`"table"`)
-rather than userdata (`"userdata"`). That is a `type()` divergence,
-not a sequence-access one, and can't be closed without switching
-elements to userdata — out of scope here.
+The panluna-style breakage documented above is classified **wontfix**:
+panluna branches on `type(x)`, and our elements are plain tables
+(`"table"`) rather than pandoc's userdata (`"userdata"`). Closing this
+would require moving AST construction back across the mlua boundary
+— Rust-side `UserData` impls and field proxies for every element
+type, breaking the "AST lives in Lua, Rust doesn't convert on the
+hot path" principle from `CLAUDE.md`, touching every reader/writer/
+filter path, and complicating the `pandoc.read`/`pandoc.write`
+sub-state recursion (userdata doesn't cross Lua states). The problem
+has surfaced exactly once in project history — this very note — and
+was routed around with a ~300-LOC in-tree bridge in
+`scripts/readers/markdown.lua` that ships fine. The cost/benefit
+doesn't justify the refactor. If it ever comes up again, the cheaper
+path is to upstream a ~5-line patch to the offending library so it
+checks `el.tag ~= nil` before falling into the `ipairs` branch — one
+fix helps every plain-table-AST consumer, not just minipandoc.
 
 ## Related
 
