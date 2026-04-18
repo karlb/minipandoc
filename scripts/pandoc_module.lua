@@ -119,7 +119,14 @@ end
 
 pandoc.List.__index = List
 pandoc.List.__name = "List"
-setmetatable(pandoc.List, { __call = function(_, t) return List.new(t) end })
+-- Expose methods both ways: `list:map(f)` (via List metatable on instances)
+-- and `pandoc.List.map(list, f)` (static form that pandoc's real module
+-- also supports and that e.g. panluna relies on). Metatable __index on
+-- pandoc.List makes the unbound method lookup resolve to List.
+setmetatable(pandoc.List, {
+  __call = function(_, t) return List.new(t) end,
+  __index = List,
+})
 
 -- ---------------------------------------------------------------------------
 -- Attr
@@ -590,6 +597,12 @@ function pandoc.MetaMap(tbl) return tbl or {} end
 -- Inlines / Blocks — tagged List variants
 -- ---------------------------------------------------------------------------
 
+-- Forward-declared so pandoc.Inlines / pandoc.Blocks capture them as
+-- upvalues; the tables are populated in the "Element tag sets" block
+-- further down. Previously these were looked up as implicit globals,
+-- which errored on non-nil element-table inputs.
+local INLINE_TAGS, BLOCK_TAGS
+
 local Inlines = setmetatable({}, { __index = List })
 Inlines.__index = Inlines
 Inlines.__name = "Inlines"
@@ -811,13 +824,13 @@ end
 -- if the filter has a function for its tag, call it; the return value replaces
 -- the element (nil = keep unchanged; false = delete).
 
-local INLINE_TAGS = {
+INLINE_TAGS = {
   Str=true, Emph=true, Underline=true, Strong=true, Strikeout=true,
   Superscript=true, Subscript=true, SmallCaps=true, Quoted=true, Cite=true,
   Code=true, Space=true, SoftBreak=true, LineBreak=true, Math=true,
   RawInline=true, Link=true, Image=true, Note=true, Span=true,
 }
-local BLOCK_TAGS = {
+BLOCK_TAGS = {
   Plain=true, Para=true, LineBlock=true, CodeBlock=true, RawBlock=true,
   BlockQuote=true, OrderedList=true, BulletList=true, DefinitionList=true,
   Header=true, HorizontalRule=true, Table=true, Figure=true, Div=true,
@@ -1103,5 +1116,12 @@ function pandoc._internal.escape_html_attr(s)
        :gsub("<", "&lt;"):gsub(">", "&gt;")
   return s
 end
+
+-- Expose lpeg and re under pandoc.* to match pandoc's convention for
+-- custom readers. Preloaded from the Rust bootstrap.
+local ok_lpeg, lpeg = pcall(require, "lpeg")
+if ok_lpeg then pandoc.lpeg = lpeg end
+local ok_re, re = pcall(require, "re")
+if ok_re then pandoc.re = re end
 
 return pandoc

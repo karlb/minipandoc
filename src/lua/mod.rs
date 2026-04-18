@@ -6,6 +6,11 @@ use crate::options::{ReaderOptions, WriterOptions};
 const PANDOC_MODULE_LUA: &str = include_str!("../../scripts/pandoc_module.lua");
 const LAYOUT_LUA: &str = include_str!("../../scripts/layout.lua");
 const TEMPLATE_LUA: &str = include_str!("../../scripts/template.lua");
+const RE_LUA: &str = include_str!("../../scripts/vendor/lpeg/re.lua");
+
+unsafe extern "C-unwind" {
+    fn luaopen_lpeg(L: *mut mlua::ffi::lua_State) -> std::os::raw::c_int;
+}
 
 fn to_lua_err(e: impl std::fmt::Display) -> mlua::Error {
     mlua::Error::RuntimeError(e.to_string())
@@ -13,6 +18,14 @@ fn to_lua_err(e: impl std::fmt::Display) -> mlua::Error {
 
 /// Initialize a fresh Lua state with the pandoc module loaded.
 pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error> {
+    // Preload lpeg (C module) and re (pure-Lua regex on top of lpeg).
+    // Must happen before pandoc_module.lua runs so its `pcall(require,
+    // "lpeg")` succeeds and exposes `pandoc.lpeg` / `pandoc.re`.
+    let lpeg_fn = unsafe { lua.create_c_function(luaopen_lpeg)? };
+    lua.preload_module("lpeg", lpeg_fn)?;
+    let re_fn = lua.load(RE_LUA).set_name("re.lua").into_function()?;
+    lua.preload_module("re", re_fn)?;
+
     let pandoc: Table = lua.load(PANDOC_MODULE_LUA).set_name("pandoc_module.lua").eval()?;
     lua.globals().set("pandoc", pandoc)?;
     // Load pandoc.layout on top of the pandoc table.

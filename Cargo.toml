@@ -19,6 +19,10 @@ clap = { version = "4", features = ["derive"] }
 thiserror = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
+[build-dependencies]
+cc = "1"
+lua-src = "550"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

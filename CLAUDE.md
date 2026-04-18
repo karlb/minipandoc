@@ -1,15 +1,15 @@
 # minipandoc — Claude guide
 
 A pandoc-compatible document converter where all format readers/writers are
-Lua scripts. The Rust core is a small binary (~1.7 MB release) that provides
-the pipeline, the pandoc Lua API, and format resolution. Zero format
-knowledge lives in Rust.
+Lua scripts. The Rust core is a small binary (~2.3 MB release, LPeg included)
+that provides the pipeline, the pandoc Lua API, and format resolution. Zero
+format knowledge lives in Rust.
 
 ## Current state
 
-Readers: `native`, `djot`, `html`. Writers: `native`, `djot`, `html`,
-`plain`, `markdown`, `latex`, `epub`. Standalone output via `-s` is
-template-driven (pandoc-style doctemplates). EPUB is the first binary
+Readers: `native`, `djot`, `html`, `markdown`. Writers: `native`, `djot`,
+`html`, `plain`, `markdown`, `latex`, `epub`. Standalone output via `-s`
+is template-driven (pandoc-style doctemplates). EPUB is the first binary
 (ZIP-based) format; it uses `ByteStringWriter` + `pandoc.zip.create()`.
 
 Committed milestones:
@@ -18,10 +18,12 @@ Committed milestones:
 - `1875e27` — HTML writer.
 - `93fdb9f` — Plain writer (unblocks djot's complex-table fallback).
 - `f9dabf6` — Template engine (`pandoc.template.*`, bundled defaults).
+- Markdown reader via vendored LPeg 1.1.0 + `jgm/lunamark` + an in-tree
+  lunamark→pandoc-AST bridge. `pandoc.lpeg` / `pandoc.re` are exposed to
+  all Lua scripts, matching pandoc's custom-reader convention.
 
-55 tests pass (`cargo test`) across 13 integration suites, including
-parity against real pandoc when it's on PATH (tests skip gracefully
-otherwise).
+Integration tests run against real pandoc when it's on PATH (tests skip
+gracefully otherwise).
 
 ## Build & test
 
@@ -33,8 +35,10 @@ cargo test
 ```
 
 `mlua` is vendored with the `lua54` feature, so no system Lua is required.
-`build.rs` regenerates `$OUT_DIR/djot_{reader,writer}.lua` from
-`scripts/vendor/djot/` on every vendor-dir change.
+`build.rs` compiles LPeg from `scripts/vendor/lpeg/` against the same Lua
+headers mlua uses, and regenerates the amalgamated reader/writer bundles
+(`$OUT_DIR/djot_{reader,writer}.lua`, `$OUT_DIR/markdown_reader.lua`) on
+every vendor-dir change.
 
 ## Architecture
 
@@ -50,10 +54,12 @@ src/main.rs       — thin entry point
 scripts/pandoc_module.lua — the pandoc.* Lua API (most of it)
 scripts/layout.lua        — pandoc.layout pretty-printer
 scripts/template.lua      — pandoc.template (doctemplates subset)
-scripts/readers/*.lua     — bundled readers (native)
+scripts/readers/*.lua     — bundled readers (native, html, markdown shim)
 scripts/writers/*.lua     — bundled writers (native, html, plain, epub, …)
 scripts/templates/*       — bundled default templates (default.html, default.plain)
 scripts/vendor/djot/      — upstream jgm/djot.lua, unmodified
+scripts/vendor/lunamark/  — upstream jgm/lunamark (markdown reader sources)
+scripts/vendor/lpeg/      — upstream LPeg 1.1.0 C sources, built by build.rs
 ```
 
 Flow: the AST lives in Lua as plain tables with metatables. Rust never
@@ -117,6 +123,21 @@ bundled fallback map.
   TeX, not pandoc's Unicode rendering.
 - No docx/odt support — needs `pandoc.xml` (read/parse). EPUB writing
   works via `pandoc.zip.create()` (Rust-backed) + the Lua epub writer.
+- **Pandoc filter sequence-access API is unimplemented.** Pandoc's
+  Lua API lets filters treat elements as lists (`para[1]`, `#para`,
+  `ipairs(para)`). Our AST elements are plain tables with only named
+  fields, so filters or libraries using that style silently misbehave.
+  Handler-style filters (`function Emph(el) ... end` with field
+  access) work fine. Full analysis + fix sketch in
+  [`notes/ast-element-sequence-semantics.md`](notes/ast-element-sequence-semantics.md).
+- **Markdown reader (via vendored `jgm/lunamark`) does not yet cover**:
+  grid tables (lunamark parses only pipe tables), TeX math (no
+  `$...$`/`$$...$$` handling), and auto-generated header identifiers
+  (pandoc derives `id` from heading text by default; we emit empty id).
+  Unicode case folding for reference-link lookup uses ASCII
+  `string.lower` — a Lua 5.4 stdlib limitation stubbed in `build.rs`.
+  Tracked as follow-ups; iterate via `markdown_reader_parity.rs`
+  fixture-by-fixture, same discipline as djot.
 
 ## Useful invocations
 
@@ -125,8 +146,10 @@ bundled fallback map.
 LUA_PATH="./scripts/vendor/djot/?.lua;;" \
   pandoc -f scripts/vendor/djot/djot-reader.lua -t native fx.dj > fx.native
 
-# Bump the vendored djot SHA:
+# Bump vendored vendor:
 ./scripts/vendor/djot/update.sh <NEW_SHA>
+./scripts/vendor/lunamark/update.sh <NEW_SHA>
+./scripts/vendor/lpeg/update.sh <VERSION>
 
 # Verify vendored tree is unmodified:
 diff -r <(mktemp_with_upstream_files) scripts/vendor/djot

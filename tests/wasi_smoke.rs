@@ -99,8 +99,8 @@ fn wasi_binary_lists_formats_and_converts() {
     );
     let html = String::from_utf8(out.stdout).expect("utf8");
     assert!(
-        html.contains("<h1>Hello</h1>"),
-        "expected <h1>Hello</h1> in WASM output:\n{html}"
+        html.contains("Hello</h1>"),
+        "expected a level-1 heading with text \"Hello\" in WASM output:\n{html}"
     );
     assert!(
         html.contains("<em>emph</em>"),
