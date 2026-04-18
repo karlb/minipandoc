@@ -123,6 +123,13 @@ bundled fallback map.
   TeX, not pandoc's Unicode rendering.
 - No docx/odt support — needs `pandoc.xml` (read/parse). EPUB writing
   works via `pandoc.zip.create()` (Rust-backed) + the Lua epub writer.
+- **Pandoc filter sequence-access API is unimplemented.** Pandoc's
+  Lua API lets filters treat elements as lists (`para[1]`, `#para`,
+  `ipairs(para)`). Our AST elements are plain tables with only named
+  fields, so filters or libraries using that style silently misbehave.
+  Handler-style filters (`function Emph(el) ... end` with field
+  access) work fine. Full analysis + fix sketch in
+  [`notes/ast-element-sequence-semantics.md`](notes/ast-element-sequence-semantics.md).
 - **Markdown reader (via vendored `jgm/lunamark`) does not yet cover**:
   grid tables (lunamark parses only pipe tables), TeX math (no
   `$...$`/`$$...$$` handling), and auto-generated header identifiers

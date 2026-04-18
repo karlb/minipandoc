@@ -196,6 +196,16 @@ re-run them against each writer on release. Candidates:
 
 Add a CI job that runs the filter set once the list exists.
 
+**Known gap**: pandoc elements can be treated as sequences of their
+primary content (`para[1]`, `#para`, `ipairs(para)`). Our AST
+elements are plain tables without sequence metamethods, so filters
+or libraries that use that API silently misbehave — surfaced when
+we tried vendoring `tarleb/panluna` for the markdown reader. See
+[`notes/ast-element-sequence-semantics.md`](notes/ast-element-sequence-semantics.md)
+for the full analysis and fix sketch. The canonical filter-corpus
+check should explicitly include sequence-access patterns, not just
+handler-style filters.
+
 ## Success signals
 
 The project matters when:
