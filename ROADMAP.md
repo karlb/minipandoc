@@ -110,7 +110,6 @@ between milestones.
 - **Plain writer**: byte-match pandoc's column-width algorithm for
   complex tables; implement texmath (Unicode rendering for `Math`
   elements) instead of raw TeX passthrough.
-- **Native writer**: pretty-printing to match pandoc's output form.
 - **`--embed-resources`**: `<script src>`, `<video>`/`<audio>`/
   `<source>`, `<embed>`, `<iframe>`, recursive `url(...)` rewriting
   inside inlined CSS.
