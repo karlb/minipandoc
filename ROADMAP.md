@@ -5,9 +5,15 @@ set of readers/writers have landed; the open questions now are which
 formats to add next, how close to match pandoc's output byte-for-byte,
 and how to ship the artifact.
 
+Priorities for new readers, writers, and reader overhauls are driven
+by the target pitches tracked in
+[`notes/use-cases.md`](notes/use-cases.md). Items below tagged
+"(use-cases §X)" link back to a specific pitch there.
+
 ## Done
 
-Readers: `native`, `djot`, `html`. Writers: `native`, `djot`, `html`,
+Readers: `native`, `djot`, `html`, `markdown` (first-cut — conformance
+and GFM parity are Next #3). Writers: `native`, `djot`, `html`,
 `plain`, `markdown`, `latex`, `epub`. Everything below is summarized;
 CHANGELOG / git log has the detail.
 
@@ -67,37 +73,63 @@ CHANGELOG / git log has the detail.
 Priority-ordered. Each is scoped small enough to ship as its own
 milestone.
 
-### 1. npm package for the WASM build
+### 1. Measurements — scope the markdown reader overhaul
+
+Two cheap measurements gate the rest of the next queue (see
+[`notes/use-cases.md`](notes/use-cases.md) "Measurements first"):
+
+- **M1 — CommonMark spec-suite pass rate.** Run the canonical
+  `commonmark/CommonMark` spec tests through
+  `minipandoc -f markdown -t html` and report pass rate + top
+  failure categories. Determines the scope of #3 below and whether
+  the mdBook replacement experiment (use-cases §1) is viable at all
+  (~95%+ target).
+- **M2 — markdown-reader throughput** vs `pulldown-cmark` on
+  `rust-lang/book` or a similar large corpus. Ratio > 10× kills the
+  SSG experiment regardless of conformance.
+
+Both are reports, not code changes. Run before committing to #3.
+
+### 2. npm package for the WASM build
 
 The browser target works end-to-end and the wasm is 399 KB gzipped.
 Packaging unblocks downstream adoption and exercises the stable
 public API surface (`convert(input, from, to, opts)` in
 `web/minipandoc.mjs`). Success-signal #4 depends on this.
 
-### 2. Markdown reader — iterate on parity
+### 3. Markdown reader — CommonMark conformance + GFM
 
-Landed (commit will be labelled once squash/push happens): LPeg 1.1.0
-+ `jgm/lunamark` are vendored; `scripts/readers/markdown.lua` is an
-in-tree bridge that drives lunamark with a handwritten pandoc-AST
-writer. 7 of 15 canonical fixtures pass strict AST parity with
-pandoc 3.9; 8 are smoke-only pending follow-ups (see
-`tests/markdown_reader_parity.rs` `SMOKE_ONLY` and the "Known
-limitations" section of `CLAUDE.md`). `cmark-lua` (the ROADMAP's
-original recommendation) turned out to be a SWIG wrapper around
-`libcmark` — not portable to `wasm32-wasip1` — so we went with
-LPeg + lunamark instead, matching pandoc's own custom-reader
-convention (`pandoc.lpeg` / `pandoc.re`).
+Goal: pass the CommonMark spec suite at ~95%+ and implement the GFM
+extensions SSG and note-editor users depend on — task lists,
+strikethrough, autolinks, footnotes, and **GitHub-slug auto header
+ids** (currently our biggest gap; silent anchor breakage today).
+Unblocks the mdBook replacement experiment (use-cases §1),
+JupyterLite (§0a), HedgeDoc (§0b), and Zettelkasten tools (§5).
+**Scope depends on M1** — some of the work below may already pass.
 
-Next iterations, in rough priority order:
+Current state: LPeg 1.1.0 + `jgm/lunamark` are vendored;
+`scripts/readers/markdown.lua` is an in-tree bridge that drives
+lunamark with a handwritten pandoc-AST writer. 7 of 15 canonical
+fixtures pass strict AST parity with pandoc 3.9; 8 are smoke-only
+pending follow-ups (`tests/markdown_reader_parity.rs` `SMOKE_ONLY`
+and "Known limitations" in `CLAUDE.md`). `cmark-lua` (the earlier
+recommendation here) is a SWIG wrapper around `libcmark` — not
+portable to `wasm32-wasip1` — so we went with LPeg + lunamark,
+matching pandoc's own custom-reader convention
+(`pandoc.lpeg` / `pandoc.re`).
+
+Tactical follow-ups beyond what the CommonMark/GFM goals directly
+demand:
 - Unindented footnote bodies (pandoc's default writer form).
 - Nested bullet / ordered lists (biggest semantic gap).
 - Key-value attribute propagation on headers / link_attributes.
 - Pandoc's "simple" indented table form.
 - Grid tables (lunamark doesn't parse these at all).
+- TeX math (`$…$`, `$$…$$`).
 - `escaped_line_breaks` → SoftBreak parity.
 
 This unblocks success-signal #3 end-to-end; the parity scorecard
-will catch regressions as each gap closes.
+catches regressions as each gap closes.
 
 ## Polish
 
@@ -110,6 +142,10 @@ between milestones.
 - **Plain writer**: byte-match pandoc's column-width algorithm for
   complex tables; implement texmath (Unicode rendering for `Math`
   elements) instead of raw TeX passthrough.
+- **Latex writer strengthening** (use-cases §0a, JupyterLite):
+  close notebook-export gaps — verify code-block, figure, caption,
+  and math output against pandoc `nbconvert`-style fixtures.
+  Incremental, fixture-driven.
 - **`--embed-resources`**: `<script src>`, `<video>`/`<audio>`/
   `<source>`, `<embed>`, `<iframe>`, recursive `url(...)` rewriting
   inside inlined CSS.
@@ -134,11 +170,25 @@ RST, Org-mode, JATS, AsciiDoc. Medium-effort each, benefit from the
 layout engine and whatever markdown scaffolding has landed. Pick by
 demand.
 
+### Slide formats — reveal.js, beamer
+
+reveal.js (html-based) is required for HedgeDoc parity
+(use-cases §0b) and broadly useful for any editor with a "present"
+mode. beamer (latex-based) is the natural follow-up. Both are
+writers over pandoc's slide-structured AST (level-1/level-2 header
+breaks), reusing the existing html/latex writers with slide-break
+handling.
+
 ### Reader coverage for existing writers
 
-Right now we read native / djot / html but write seven formats. A
-markdown reader lands with Next #3; LaTeX, EPUB, and RST readers
-are plausible follow-ups, each a sub-project of its own.
+Right now we read native / djot / html / markdown but write seven
+formats. Plausible follow-ups, each a sub-project of its own:
+
+- **`ipynb` reader** (use-cases §0a, JupyterLite) — Jupyter
+  notebooks are JSON with markdown / code / raw cells; a thin Lua
+  reader over the markdown reader. Priority follow-up once the
+  markdown reader overhaul (Next #3) lands.
+- **LaTeX, EPUB, RST readers** — larger sub-projects; demand-driven.
 
 ### Citeproc
 
@@ -165,6 +215,10 @@ Lower priority — Lua filters are the preferred path and already work.
 
 - `cargo install minipandoc`
 - npm package for the WASM build (see Next #2)
+- **Published Docker image** `ghcr.io/karlb/minipandoc:alpine` for
+  CI adoption (use-cases §3). Zero code, immediate traction — an
+  alpine + minipandoc image should land under 10 MB vs
+  `pandoc/core`'s ~500 MB.
 
 ### Future
 
