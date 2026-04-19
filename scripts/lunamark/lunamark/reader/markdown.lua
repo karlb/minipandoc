@@ -1980,6 +1980,18 @@ function M.new(writer, options)
 
   -- inp is a string; line endings are assumed to be LF (unix-style)
   -- and tabs are assumed to be expanded.
+  -- Pre-scan pattern: walk the whole input and let NoteBlock /
+  -- Reference match wherever they would anyway, discarding captures
+  -- but keeping the `register_note` / `register_link` side effects.
+  -- This makes rawnotes / references fully populated before
+  -- parse_blocks runs inline rope resolution, so note and link
+  -- references resolve correctly even when their definition appears
+  -- AFTER the use — which is how pandoc behaves and what real-world
+  -- documents rely on. register_* are idempotent, so registering
+  -- twice (prescan + the real Blank pass) is harmless.
+  local prescan_refs =
+    (larsers.NoteBlock + larsers.Reference + parsers.any)^0
+
   parse_markdown =
     function(inp)
       references = options.references or {}
@@ -1990,6 +2002,7 @@ function M.new(writer, options)
         writer.set_metadata("date",date)
         inp = rest
       end
+      lpegmatch(prescan_refs, inp)
       local result = { writer.start_document(), parse_blocks(inp), writer.stop_document() }
       return writer.rope_to_output(result), writer.get_metadata()
     end

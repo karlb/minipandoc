@@ -100,10 +100,9 @@ const SMOKE_ONLY: &[&str] = &[
     // Pandoc's "simple" indented table form (no `|` delimiters): not
     // supported by lunamark.
     "table.md",
-    // Pandoc writer emits footnote definitions with the body on the
-    // same line as the marker (`[^1]: body`); lunamark's `NoteBlock`
-    // parser requires a 4-space-indented body after the colon.
-    "footnote.md",
+    // (footnote.md now graduates to strict parity — the two-pass
+    // NoteBlock/Reference prescan lets refs resolve even when the
+    // def comes after the use, since PR 3 fork edits.)
     // Nested bullet lists: lunamark's list parser doesn't recognize
     // indentation-based nesting the way pandoc does.
     "lists.md",
