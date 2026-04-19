@@ -1,0 +1,56 @@
+[ Para
+    [ Str "Inline:"
+    , Space
+    , Math InlineMath "x^2 + y^2 = z^2"
+    , Str ","
+    , Space
+    , Str "next"
+    , Space
+    , Math InlineMath "E = mc^2"
+    , Str "."
+    ]
+, Para
+    [ Str "Edge:"
+    , Space
+    , Str "$20"
+    , Space
+    , Str "and"
+    , Space
+    , Str "$30"
+    , Space
+    , Str "are"
+    , Space
+    , Str "literals;"
+    , Space
+    , Math InlineMath "a"
+    , Str "b$"
+    , Space
+    , Str "closes"
+    , Space
+    , Str "early."
+    ]
+, Para [ Str "Display" , Space , Str "alone:" ]
+, Para
+    [ Math DisplayMath "\n\\int_0^\\infty e^{-x^2} dx\n" ]
+, Para
+    [ Str "Mixed"
+    , Space
+    , Str "inline"
+    , Space
+    , Math InlineMath "a"
+    , Space
+    , Str "with"
+    , Space
+    , Str "display"
+    , Space
+    , Math DisplayMath "b"
+    , Space
+    , Str "on"
+    , Space
+    , Str "the"
+    , Space
+    , Str "same"
+    , Space
+    , Str "line."
+    ]
+]

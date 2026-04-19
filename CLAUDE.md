@@ -138,9 +138,10 @@ bundled fallback map.
   `tarleb/panluna`) still misbehave because our elements are
   `"table"` rather than `"userdata"`; that remains a deferred gap.
 - **Markdown reader (forked `jgm/lunamark` at `scripts/lunamark/`) does
-  not yet cover**: grid tables (lunamark parses only pipe tables), TeX
-  math (no `$...$`/`$$...$$` handling), and several CommonMark block
-  rules — see ROADMAP "Markdown reader" for the ordered fix queue and
+  not yet cover**: grid tables (lunamark parses only pipe tables) and
+  several CommonMark block rules. TeX math (`$...$` / `$$...$$`) is
+  now handled via the `tex_math_dollars` extension. See ROADMAP
+  "Markdown reader" for the ordered fix queue and
   `tests/commonmark_spec.rs` for the per-section scorecard. Unicode
   case folding for reference-link lookup uses ASCII `string.lower` —
   a Lua 5.4 stdlib limitation stubbed in `build.rs`. Iterate via

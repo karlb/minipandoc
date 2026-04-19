@@ -87,6 +87,7 @@ parsers.semicolon              = P(";")
 parsers.exclamation            = P("!")
 parsers.pipe                   = P("|")
 parsers.tilde                  = P("~")
+parsers.dollar                 = P("$")
 parsers.tab                    = P("\t")
 parsers.newline                = P("\n")
 parsers.tightblocksep          = P("\001")
@@ -1047,6 +1048,9 @@ function M.new(writer, options)
   if options.mark then
     specials = specials .. "="
   end
+  if options.tex_math_dollars then
+    specials = specials .. "$"
+  end
   larsers.specialchar         = S(specials)
 
   larsers.normalchar          = parsers.any - (larsers.specialchar
@@ -1235,6 +1239,35 @@ function M.new(writer, options)
                        / writer.rawinline
 
   larsers.Code         = parsers.inticks / writer.code
+
+  -- tex_math_dollars: `$...$` inline and `$$...$$` display math.
+  -- Pandoc rules: inline content must not begin or end with whitespace
+  -- and the closing `$` must not be followed by a digit; display math
+  -- preserves its content verbatim (including surrounding newlines).
+  -- These parsers run unconditionally — the syntax table below fills
+  -- them with `parsers.fail` when the option is off, matching the
+  -- pattern used for every other extension here.
+  local mathchar = (P("\\") * parsers.any)
+                 + (parsers.any - parsers.dollar - parsers.newline)
+                 + (parsers.newline * -parsers.blankline)
+  local function validate_inline_math(_, i, content)
+    if #content == 0 or content:match("^%s") or content:match("%s$") then
+      return false
+    end
+    return i, content
+  end
+  larsers.InlineMath   = parsers.dollar
+                       * Cmt(C(mathchar^1) * parsers.dollar,
+                             validate_inline_math)
+                       * -parsers.digit
+                       / writer.inlinemath
+
+  local dispmathchar = (P("\\") * parsers.any)
+                     + (parsers.any - P("$$"))
+  larsers.DisplayMath  = P("$$")
+                       * C(dispmathchar^0)
+                       * P("$$")
+                       / writer.displaymath
 
   if options.require_blank_before_blockquote then
     larsers.bqstart = parsers.fail
@@ -1437,7 +1470,13 @@ function M.new(writer, options)
   larsers.UlOrStarLine  = parsers.asterisk^4 + parsers.underscore^4
                         / writer.string
 
-  larsers.EscapedChar   = S("\\") * C(parsers.escapable) / writer.string
+  -- Extend the default escapable set with `$` when tex_math_dollars is
+  -- on, so users can write literal dollar signs without triggering math.
+  local escapable = parsers.escapable
+  if options.tex_math_dollars then
+    escapable = escapable + parsers.dollar
+  end
+  larsers.EscapedChar   = S("\\") * C(escapable) / writer.string
 
   larsers.InlineHtml    = C(parsers.inlinehtml) / writer.inline_html
 
@@ -1980,6 +2019,8 @@ function M.new(writer, options)
                             + V("Image")
                             + V("RawInLine") -- Must have precedence over Code
                             + V("Code")
+                            + V("DisplayMath") -- Must precede InlineMath
+                            + V("InlineMath")
                             + V("AutoLinkUrl")
                             + V("AutoLinkEmail")
                             + V("InlineHtml")
@@ -2005,6 +2046,8 @@ function M.new(writer, options)
       Link                  = larsers.Link,
       Image                 = larsers.Image,
       Code                  = larsers.Code,
+      DisplayMath           = larsers.DisplayMath,
+      InlineMath            = larsers.InlineMath,
       RawInLine             = larsers.RawInLine,
       AutoLinkUrl           = larsers.AutoLinkUrl,
       AutoLinkEmail         = larsers.AutoLinkEmail,
@@ -2077,6 +2120,11 @@ function M.new(writer, options)
 
   if not options.line_blocks then
     syntax.LineBlock = parsers.fail
+  end
+
+  if not options.tex_math_dollars then
+    syntax.InlineMath = parsers.fail
+    syntax.DisplayMath = parsers.fail
   end
 
   if options.alter_syntax and type(options.alter_syntax) == "function" then

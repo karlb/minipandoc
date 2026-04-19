@@ -336,6 +336,8 @@ local function make_writer(auto_ids)
   end
   w.rawblock    = function(text, format, attr) return pandoc.RawBlock(format, text) end
   w.display_html = function(text) return pandoc.RawBlock("html", text) end
+  w.inlinemath  = function(text) return pandoc.Math("InlineMath", text) end
+  w.displaymath = function(text) return pandoc.Math("DisplayMath", text) end
   w.bulletlist  = function(items, tight) return pandoc.BulletList(list_items(items, tight)) end
   w.orderedlist = function(items, tight, startnum, style, delim)
     return pandoc.OrderedList(
@@ -468,6 +470,7 @@ local EXT_TO_OPT = {
   subscript                      = "subscript",
   superscript                    = "superscript",
   task_list                      = "task_list",
+  tex_math_dollars               = "tex_math_dollars",
 }
 
 local function to_lunamark_options(opts)
