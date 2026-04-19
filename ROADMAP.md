@@ -136,10 +136,12 @@ Ordered by cost vs pitch leverage:
    [`f8a9f56`](#)); graduated `footnote.md` and pushed the overall
    scorecard 254 → 283 (biggest move so far because it unblocks
    every forward reference-link in the spec).
-4. **Nested lists** — `parsers.bullet` treats 0/1/2/3 leading
-   spaces equally so `  - nested` becomes a sibling. Track the
-   list's starting indent and require subsequent markers to match.
-   Graduates `lists.md`; biggest win for HedgeDoc.
+4. **Nested lists ✓** — column-anchor BulletList / OrderedList /
+   TaskList markers via a Lua-side list-column stack driven by Cmt
+   callbacks; create_parser snapshots the stack around every
+   recursive parse. Landed (commit [`5e2b70b`](#)); graduated
+   `lists.md` (strict pandoc AST parity). Biggest downstream win
+   for HedgeDoc.
 5. **Indented + fenced code blocks** (today 0/12 and 1/29). Tab
    handling inside code is completely wrong; fence indent tolerance
    is off. Required for every downstream pitch.
@@ -154,14 +156,14 @@ and full HTML-block precedence are out of scope — if a pitch ever
 demands that depth we reach for cmark-gfm instead of pushing lunamark
 further.
 
-Current state (through PR 3): 43.4 % CommonMark pass rate
-(283 / 652). The scorecard now runs with
+Current state (through PR 4): 43.1 % CommonMark pass rate
+(281 / 652). The scorecard now runs with
 `-f markdown-auto_identifiers-smart` so pandoc-markdown extras
 don't count against grammar conformance — numbers here are not
 directly comparable to the 33.3 % recorded in
 `notes/measurements.md`, which used the default `-f markdown`.
-10 of 15 canonical fixtures pass strict AST parity with pandoc 3.9
-(was 7); 5 remain smoke-only pending the work above
+11 of 15 canonical fixtures pass strict AST parity with pandoc 3.9
+(was 7); 4 remain smoke-only pending the work above
 (`tests/markdown_reader_parity.rs` `SMOKE_ONLY` and "Known
 limitations" in `CLAUDE.md`). The parity scorecard
 (`tests/commonmark_spec.rs`) tracks per-section improvement as each
