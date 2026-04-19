@@ -61,48 +61,119 @@ runtimes, and any wasm-capable host language.
 
 ### 0. In-browser / client-side document conversion (the headline win)
 
-- **Project fit**: any web app that today either ships a partial
-  JS markdown renderer (marked, markdown-it, remark) or round-trips
-  documents through a pandoc server. Concrete candidates:
-  StackEdit-style online editors, GitHub/GitLab's client-side
-  markdown preview, Docusaurus / Nextra / VitePress live-preview
-  plugins, Observable-style notebooks, online djot playgrounds,
-  privacy-preserving "cloudconvert lite" UIs.
-- **Benefit over pandoc**
-  - Pandoc has **no supported browser build** (GHC-wasm is early and
-    the output is orders of magnitude larger). Minipandoc ships a
-    ~565 KB gzipped wasm today.
-  - Zero server round-trip → latency, privacy, offline, and cost wins
-    all compound.
-  - Same Lua filter story works in the browser — users can write one
-    filter and run it in CI, desktop, and the web playground.
-- **Blockers**
-  - wasi-sdk requires the `__wasi_init_tp` stub (documented in the
-    harness) — trivial but surprising.
-  - Format coverage limits still apply: no docx/pdf in the browser.
-  - Size budget: 565 KB gzipped is great, but if a host app was
-    already using markdown-it (~60 KB), switching costs ~500 KB.
+Filtered to projects with sizable user bases where minipandoc fills an
+unoccupied niche in the browser. Ranked.
 
-### 1. Rust static-site generators (Zola, Cobalt, mdBook)
+#### 0a. JupyterLite and Jupyter's browser export story
 
-- **Project fit**: Zola (`getzola/zola`) and mdBook (`rust-lang/mdBook`)
-  use `pulldown-cmark`, which has no pandoc filter API, no djot, no
-  templated standalone pipeline beyond their own. Users routinely ask
-  for pandoc-style features (cross-refs, citations-lite, Lua filters).
+- **Project fit**: JupyterLite is browser-native Jupyter, officially
+  maintained by Project Jupyter. Classic Jupyter uses `nbconvert` →
+  pandoc for notebook → html / latex / pdf / epub export. JupyterLite
+  runs entirely in the browser and has **no equivalent**: the
+  Python-side `nbconvert` does not run in-browser, and pandoc has no
+  supported browser build. The gap is real and unoccupied.
+- **User base**: Jupyter's reach is tens of millions; JupyterLite is
+  actively adopted for teaching, docs, interactive books, and the
+  Jupyter Book / Executable Books ecosystem.
 - **Benefit over pandoc**
-  - mdBook/Zola can embed minipandoc as a **library** (Cargo dep) and
-    keep their single-binary distribution story. Shelling out to pandoc
-    would break it.
-  - Adds djot support, a growing pandoc-adjacent format pulldown-cmark
-    will never implement.
-  - Lua filters give users a plugin point without Rust recompiles.
-- **Blockers**
-  - Markdown reader gaps: grid tables, TeX math, auto header ids (see
-    CLAUDE.md "Known limitations"). Without auto ids, anchor links break.
-  - Upstream buy-in: Zola's maintainers prize minimalism and are unlikely
-    to take a second renderer unless it's opt-in.
-  - Output byte-parity with pandoc not guaranteed (native compact form);
-    user-facing html is fine, but snapshot tests would churn.
+  - Fills the nbconvert-in-browser gap nothing else covers.
+  - Same wasm serves JupyterLite, classic JupyterLab (via an
+    extension), and Jupyter Book's live preview — single artifact.
+  - Lua filters let notebook authors apply pandoc-ecosystem
+    transformations inside the browser, consistent with server-side
+    nbconvert behavior.
+- **Blockers (improvements required)**
+  - **`ipynb` reader.** Feasible — ipynb is JSON with markdown / code
+    / raw cells. Sits on top of our existing markdown reader; a few
+    hundred lines of Lua. New work, but small.
+  - **Latex writer strengthening.** Current writer is minimal;
+    notebook latex export needs code blocks, figures, captions, and
+    math rendering. Incremental, not a rewrite.
+  - **TeX math in the markdown reader** (already on the cross-cutting
+    list — required here too).
+- **Upstream shape**: lands as a JupyterLab / JupyterLite extension,
+  not a core fork. Low adoption friction compared with renderer swaps.
+
+#### 0b. HedgeDoc / HackMD (collaborative markdown editors)
+
+- **Project fit**: HedgeDoc is actively developed FOSS with thousands
+  of self-hosted instances (universities, FOSS orgs, companies);
+  HackMD's hosted service has hundreds of thousands of users. Current
+  export path: markdown-it → html client-side, plus server-side pandoc
+  for pdf / epub / docx on instances that installed it. Server pandoc
+  is an operational tax and a source of per-instance inconsistency.
+- **Benefit over pandoc**
+  - Instances drop the pandoc system dependency — no more "export
+    broken because the admin didn't install pandoc".
+  - Consistent export across self-hosted instances (today each one
+    gets whatever pandoc version its OS ships).
+  - Per-request latency improves (no server fork, no subprocess).
+  - Client-side export keeps document contents in the browser — a
+    real benefit for privacy-sensitive deployments.
+- **Blockers (improvements required)**
+  - **Slides writer (reveal.js, optionally beamer).** Slideshow
+    export is a core HedgeDoc feature, so this is required for parity.
+  - **Docx writer** — biggest ask from knowledge-base users (already
+    on the cross-cutting list).
+  - TeX math in the markdown reader (same as above).
+- **Upstream shape**: HedgeDoc maintainers are receptive to
+  client-side improvements; likely lands as a frontend PR toggling the
+  existing export menu to a wasm path.
+
+### 1. Rust static-site generators (mdBook, Zola) — replacement experiment
+
+Framed as a **replacement experiment**, not a preprocessor / plugin
+pitch. The preprocessor pitch is weak: it only helps users who opt in,
+and turns the value story into "Zola gains niche capabilities" rather
+than a measurable win. The experiment instead asks: *can minipandoc
+replace `pulldown-cmark` in an existing Rust SSG, and what does the
+output / performance delta look like on a real corpus?* The deliverable
+is a research answer, which may or may not lead to upstream adoption.
+
+- **Project fit**: mdBook (`rust-lang/mdBook`, ~19k stars, renders
+  `rust-lang/book` and much of the Rust documentation ecosystem) and
+  Zola (`getzola/zola`, ~14k stars) both embed `pulldown-cmark`.
+  Neither supports djot, pandoc Lua filters, or multi-format output
+  beyond what they hand-wire.
+- **User base**: large — mdBook in particular is load-bearing for
+  official Rust docs, The Rust Reference, the Cargo Book, etc.
+- **Benefit if the experiment succeeds**
+  - Djot support (pulldown-cmark will never implement it).
+  - Pandoc Lua filters as a first-class plugin point, no Rust recompile.
+  - Multi-format output (latex/epub/native) from one pipeline.
+  - Preserves single-binary distribution — minipandoc is a Cargo lib.
+- **Gates, in order**
+  1. **CommonMark conformance.** Lunamark predates CommonMark and
+     will fail the spec suite on edge cases (list tightness, HTML
+     blocks, link resolution, emphasis). pulldown-cmark passes the
+     spec, so SSG users depend on those edges whether they know it or
+     not. If we're below ~95% on the CommonMark test suite, the
+     experiment ends here — measure before investing in the rest.
+  2. **GFM parity.** Task lists, strikethrough, autolinks, footnotes,
+     and **GitHub-slug auto header ids** (currently our biggest gap —
+     silent anchor breakage today).
+  3. **Integration surface.** `pulldown-cmark` exposes an *event
+     stream*; mdBook/Zola walk it mid-stream to inject syntax
+     highlighting and shortcodes. We expose AST + `run()`. Two paths:
+     (a) fork the SSG to walk our AST directly (tractable — ~days
+     once the reader is ready); (b) build a pulldown-cmark-shaped
+     event adapter over our AST (true drop-in, more work). Fork is
+     the right experiment shape.
+- **Concrete demo path**: fork `rust-lang/mdBook` (smaller and cleaner
+  `HtmlHandlebars` renderer than Zola), rebuild on our AST, diff the
+  rendered output of `rust-lang/book` against the pulldown-cmark build,
+  measure build-time delta. Reusable answer: "here's what replacement
+  costs, here's the output/perf gap."
+- **Non-gates** (things *not* blocking the experiment)
+  - Upstream merge. The artifact is the measurement; adoption is
+    downstream of that.
+  - Native writer pretty-printing — SSGs don't consume native.
+  - Grid tables and TeX math — not core to mdBook/Zola corpora.
+- **Known risk — performance.** `pulldown-cmark` is pure Rust and
+  very fast; Lua-based reader will be slower. If we're 10× slower on
+  a 500-page book, the experiment ends there regardless of feature
+  parity. Benchmark on `rust-lang/book` early, **before** investing in
+  CommonMark conformance work.
 
 ### 2. Rust desktop markdown/note editors (Tauri / egui / iced)
 
@@ -235,18 +306,46 @@ Moved up from Tier 2 now that the wasm path is confirmed.
 
 ## Cross-cutting blockers to close next (highest leverage)
 
-Closing these unlocks whole tiers at once:
+Closing these unlocks whole tiers at once. Start with the **two
+measurements** below — they are cheap, fast, and determine the scope
+of everything that follows. Do not commit to the numbered
+implementation blockers until both measurements are in hand.
 
-1. **Markdown reader: grid tables + auto header ids + TeX math.**
-   Required for Zola/mdBook parity and for Zettelkasten tools.
+### Measurements first (do these before any implementation)
+
+- **M1. CommonMark spec-suite pass rate** for our markdown reader.
+  Run the canonical spec tests against `scripts/readers/markdown.lua`.
+  Determines the scope of blocker 1 and whether the SSG replacement
+  experiment (section 1) is even viable at ~95%+ conformance.
+- **M2. Markdown-reader throughput** vs `pulldown-cmark` on a large
+  corpus (e.g., `rust-lang/book`, ~500 pages). If we're >10× slower,
+  section 1 dies regardless of conformance and focus shifts to 0a,
+  0b, 3, 6, 7.
+
+### Implementation blockers (post-measurement)
+
+1. **Markdown reader overhaul: CommonMark conformance + GFM (task
+   lists, strikethrough, autolinks, footnotes, GitHub-slug auto
+   header ids) + grid tables + TeX math.** Largest chunk of work on
+   the list; unlocks the SSG replacement experiment, JupyterLite,
+   HedgeDoc, and Zettelkasten tools. Scope depends on M1.
    (`scripts/vendor/lunamark/`, amalgamator in `build.rs:72-100`.)
-2. **Panluna compatibility fix** — `type` shim that reports `"userdata"`
-   for element tables (tracked in `tests/panluna_fix_verification.rs`).
-   Opens the door to reusing the existing filter library corpus.
-3. **Docx writer** (via existing `pandoc.zip.create` + a writer script) —
-   single biggest feature gap for desktop editors and CI.
-4. **Published Docker image** `ghcr.io/karlb/minipandoc:alpine` — zero
-   code, immediate CI traction.
+2. **`ipynb` reader.** Unlocks JupyterLite / Jupyter-ecosystem
+   targets. New Lua reader on top of the markdown reader; small.
+3. **Slides writer — reveal.js (and eventually beamer).** Required
+   for HedgeDoc parity and broadly useful for any editor with a
+   "present" mode.
+4. **Latex writer strengthening** — code blocks, figures, captions,
+   math. Required for JupyterLite; widens desktop-editor fit too.
+5. **Panluna compatibility fix** — `type` shim that reports
+   `"userdata"` for element tables (tracked in
+   `tests/panluna_fix_verification.rs`). Opens the door to reusing
+   the existing filter library corpus.
+6. **Docx writer** (via existing `pandoc.zip.create` + a writer
+   script) — biggest feature gap for desktop editors, HedgeDoc, and
+   CI.
+7. **Published Docker image** `ghcr.io/karlb/minipandoc:alpine` —
+   zero code, immediate CI traction.
 
 ## Verification / how to validate the research
 
@@ -267,9 +366,26 @@ Closing these unlocks whole tiers at once:
   `--list-output-formats`.
 - **Pandoc crate reverse-deps** (for Tier 1.4): `cargo search pandoc`
   and crates.io reverse-dependency page.
-- **Upstream appetite**: search Zola/mdBook/Obsidian/Logseq/Docusaurus
-  issue trackers for "pandoc", "djot", "lua filter" to gauge demand
-  before pitching.
+- **M1 — CommonMark spec-suite pass rate**: fetch
+  `commonmark/CommonMark` spec tests (the `spec.json` / `spec.txt`
+  fixtures), run each input through
+  `minipandoc -f markdown -t html`, and diff against the expected
+  html. Report pass percentage and top failure categories. Gates
+  section 1; scopes blocker 1.
+- **M2 — markdown-reader throughput**: clone `rust-lang/book`, run
+  `time` over a full render with both `pulldown-cmark` (via mdBook
+  itself) and our reader (via `minipandoc -f markdown -t html` over
+  every chapter). Ratio > 10× kills section 1 outright.
+- **JupyterLite fit**: check `jupyterlite/jupyterlite` and
+  `jupyter/nbconvert` issue trackers for "browser export", "client-side
+  nbconvert", "pandoc" to gauge demand; validate that an ipynb →
+  latex/html/epub extension has no existing browser competitor.
+- **HedgeDoc fit**: inspect `hedgedoc/hedgedoc` export code path (look
+  for pandoc invocation sites) and open issues tagged `export`, `pdf`,
+  `docx` to confirm the operational pain we'd remove.
+- **Upstream appetite**: search Zola/mdBook/Obsidian/Logseq/JupyterLite/
+  HedgeDoc issue trackers for "pandoc", "djot", "lua filter",
+  "client-side export" to gauge demand before pitching.
 
 ## Critical files (reference, read-only for this task)
 
@@ -284,6 +400,17 @@ Closing these unlocks whole tiers at once:
 
 ## Deliverable
 
-This plan file itself is the deliverable — a researched shortlist of
-target projects with concrete, tier-ranked benefits and blockers. No
-code changes required.
+This plan file is a living artifact with two roles:
+
+1. **Shortlist** of target projects with tier-ranked benefits and
+   blockers — used to decide where to pitch, where to open PRs, and
+   which format/reader gaps to close next.
+2. **Prioritized work queue** — the "Cross-cutting blockers" section
+   (with its two gating measurements) is the ordered next-action
+   list. Update in place as measurements come in, blockers close, or
+   upstream-appetite signals shift the priorities.
+
+Current priority pitches: **0a (JupyterLite)** and **1 (mdBook
+replacement experiment)**. The experiment's viability is unknown
+pending **M1** (CommonMark pass rate) and **M2** (markdown-reader
+throughput) — run these first.
