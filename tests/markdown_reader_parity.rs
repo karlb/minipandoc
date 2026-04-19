@@ -7,10 +7,11 @@
 //!
 //! Fixtures in `SMOKE_ONLY` are exercised but not required to match
 //! pandoc's AST — we only assert the reader produces non-empty output
-//! without erroring. These are areas where vendored lunamark diverges
-//! from pandoc's markdown grammar (nested lists, simple/grid tables,
-//! unindented footnote bodies, key-value attribute propagation, etc.);
-//! tracked as follow-ups.
+//! without erroring. These are areas where lunamark (forked at
+//! `scripts/lunamark/`) diverges from pandoc's markdown grammar
+//! (nested lists, simple/grid tables, unindented footnote bodies,
+//! key-value attribute propagation, etc.); tracked as follow-ups in
+//! ROADMAP Next #3.
 //!
 //! Skips gracefully when pandoc is absent (matches `djot_parity.rs`).
 //!

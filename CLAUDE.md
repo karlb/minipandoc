@@ -18,7 +18,8 @@ Committed milestones:
 - `1875e27` — HTML writer.
 - `93fdb9f` — Plain writer (unblocks djot's complex-table fallback).
 - `f9dabf6` — Template engine (`pandoc.template.*`, bundled defaults).
-- Markdown reader via vendored LPeg 1.1.0 + `jgm/lunamark` + an in-tree
+- Markdown reader via vendored LPeg 1.1.0 + a forked `jgm/lunamark` at
+  `scripts/lunamark/` (see `scripts/lunamark/FORKED_FROM`) + an in-tree
   lunamark→pandoc-AST bridge. `pandoc.lpeg` / `pandoc.re` are exposed to
   all Lua scripts, matching pandoc's custom-reader convention.
 
@@ -58,8 +59,8 @@ scripts/readers/*.lua     — bundled readers (native, html, markdown shim)
 scripts/writers/*.lua     — bundled writers (native, html, plain, epub, …)
 scripts/templates/*       — bundled default templates (default.html, default.plain)
 scripts/vendor/djot/      — upstream jgm/djot.lua, unmodified
-scripts/vendor/lunamark/  — upstream jgm/lunamark (markdown reader sources)
 scripts/vendor/lpeg/      — upstream LPeg 1.1.0 C sources, built by build.rs
+scripts/lunamark/         — forked jgm/lunamark (markdown reader); we own it
 ```
 
 Flow: the AST lives in Lua as plain tables with metatables. Rust never
@@ -79,7 +80,9 @@ bundled fallback map.
 - **Never modify files under `scripts/vendor/`.** They must match the pinned
   upstream SHA byte-for-byte. If a vendored script needs different behavior,
   fix our pandoc module or the amalgamator, not the vendored code.
-  `scripts/vendor/djot/update.sh [SHA]` re-fetches cleanly.
+  `scripts/vendor/djot/update.sh [SHA]` re-fetches cleanly. This rule does
+  **not** apply to `scripts/lunamark/` — that tree was forked (see
+  `scripts/lunamark/FORKED_FROM`) and is ours to edit.
 - **Fixtures come from real pandoc**, not hand-written. Djot goldens are
   generated with the vendored reader (`LUA_PATH=... pandoc -f vendor/...`)
   so tests compare like-for-like.
@@ -134,14 +137,15 @@ bundled fallback map.
   for the correction. Libraries that branch on `type(x)` (e.g.
   `tarleb/panluna`) still misbehave because our elements are
   `"table"` rather than `"userdata"`; that remains a deferred gap.
-- **Markdown reader (via vendored `jgm/lunamark`) does not yet cover**:
-  grid tables (lunamark parses only pipe tables), TeX math (no
-  `$...$`/`$$...$$` handling), and auto-generated header identifiers
-  (pandoc derives `id` from heading text by default; we emit empty id).
-  Unicode case folding for reference-link lookup uses ASCII
-  `string.lower` — a Lua 5.4 stdlib limitation stubbed in `build.rs`.
-  Tracked as follow-ups; iterate via `markdown_reader_parity.rs`
-  fixture-by-fixture, same discipline as djot.
+- **Markdown reader (forked `jgm/lunamark` at `scripts/lunamark/`) does
+  not yet cover**: grid tables (lunamark parses only pipe tables), TeX
+  math (no `$...$`/`$$...$$` handling), and several CommonMark block
+  rules — see ROADMAP "Markdown reader" for the ordered fix queue and
+  `tests/commonmark_spec.rs` for the per-section scorecard. Unicode
+  case folding for reference-link lookup uses ASCII `string.lower` —
+  a Lua 5.4 stdlib limitation stubbed in `build.rs`. Iterate via
+  `markdown_reader_parity.rs` fixture-by-fixture, same discipline as
+  djot, and via the CommonMark scorecard for per-section deltas.
 
 ## Useful invocations
 
@@ -152,8 +156,8 @@ LUA_PATH="./scripts/vendor/djot/?.lua;;" \
 
 # Bump vendored vendor:
 ./scripts/vendor/djot/update.sh <NEW_SHA>
-./scripts/vendor/lunamark/update.sh <NEW_SHA>
 ./scripts/vendor/lpeg/update.sh <VERSION>
+# (lunamark is no longer vendored — see scripts/lunamark/FORKED_FROM)
 
 # Verify vendored tree is unmodified:
 diff -r <(mktemp_with_upstream_files) scripts/vendor/djot

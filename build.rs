@@ -18,10 +18,10 @@ use std::path::{Path, PathBuf};
 fn main() {
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let djot_dir = manifest_dir.join("scripts/vendor/djot");
-    let lunamark_dir = manifest_dir.join("scripts/vendor/lunamark");
+    let lunamark_dir = manifest_dir.join("scripts/lunamark");
 
     println!("cargo:rerun-if-changed=scripts/vendor/djot");
-    println!("cargo:rerun-if-changed=scripts/vendor/lunamark");
+    println!("cargo:rerun-if-changed=scripts/lunamark");
     println!("cargo:rerun-if-changed=scripts/vendor/lpeg");
     println!("cargo:rerun-if-changed=scripts/readers/markdown.lua");
 

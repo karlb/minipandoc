@@ -107,38 +107,57 @@ public API surface (`convert(input, from, to, opts)` in
 
 Goal, rescoped post-M1/M2: fix the block-level constructs the
 committed pitches (0a JupyterLite, 0b HedgeDoc, 5 Zettelkasten) need,
-not the full CommonMark spec. 33 % spec conformance (M1) is not
+not the full CommonMark spec. 34 % spec conformance (M1) is not
 worth rebuilding the grammar to 95 % — M2 already removed the SSG
 replacement carrot that justified that scope.
 
+As of this ROADMAP update the lunamark tree is **forked in-tree** at
+`scripts/lunamark/` (see `scripts/lunamark/FORKED_FROM`); upstream has
+been dormant since 2024-07 and the grammar edits needed here were
+previously blocked by the vendored-unchanged rule. We own it now —
+grammar fixes land as direct edits with per-section scorecard
+movement as the acceptance signal.
+
 Concretely: close the block-level gaps that actually bite downstream
-users, verify via `tests/commonmark_spec.rs` per-section deltas:
+users, verify via `tests/commonmark_spec.rs` per-section deltas.
+Ordered by cost vs pitch leverage:
 
-- **Indented + fenced code blocks** (currently 0/12 and 1/29). Tab
-  handling inside code is completely wrong; fence indent tolerance
-  is off. Required for every downstream pitch.
-- **ATX/Setext headings** (2/18 and 1/27). Including **GitHub-slug
-  auto header ids** — silent anchor breakage today and a hard
-  requirement for HedgeDoc/Zettelkasten docs.
-- **Lists** (4/27 Lists, 7/48 List items). Nested lists and list
-  continuation are lunamark's biggest semantic gap.
-- **GFM extensions relevant to the committed pitches**: task lists,
-  strikethrough, autolinks, footnotes. (`grid tables` and TeX math
-  remain tactical follow-ups only once above lands.)
+1. **ATX headings** — require a space/tab after the opening hashes
+   (fixes `#5 bolt` misparsing) and tolerate up to 3 leading spaces.
+   Both are ~1-line edits to `HeadingStart` / `AtxHeader`.
+2. **`link_attributes` on `DirectLink`** — lunamark currently only
+   applies `{…}` attrs to `DirectImage`. Copy-paste from the Image
+   branch; graduates `figure.md` from SMOKE_ONLY and fixes the image
+   attr hole in `header_attrs.md`.
+3. **Two-pass note / reference resolution** — pre-scan blocks to
+   register `[^id]: …` and `[id]: …` definitions before running
+   inlines, so `[^1]` works when the def comes after the use.
+   Graduates `footnote.md`.
+4. **Nested lists** — lunamark's `parsers.bullet` treats 0/1/2/3
+   leading spaces equally, so `  - nested` becomes a sibling. Track
+   the list's starting indent and require subsequent markers to
+   match. Graduates `lists.md`; biggest win for HedgeDoc.
+5. **Indented + fenced code blocks** (today 0/12 and 1/29). Tab
+   handling inside code is completely wrong; fence indent tolerance
+   is off. Required for every downstream pitch.
+6. **GFM extensions relevant to the committed pitches**: task lists,
+   strikethrough, autolinks, footnotes — verify against GFM fixtures
+   once 1–5 land.
+7. **TeX math** (`$…$` / `$$…$$`) — required for JupyterLite and
+   HedgeDoc. New inline/block parser in the forked grammar.
 
-Current state: LPeg 1.1.0 + `jgm/lunamark` are vendored;
-`scripts/readers/markdown.lua` is an in-tree bridge that drives
-lunamark with a handwritten pandoc-AST writer. 7 of 15 canonical
-fixtures pass strict AST parity with pandoc 3.9; 8 are smoke-only
-pending follow-ups (`tests/markdown_reader_parity.rs` `SMOKE_ONLY`
-and "Known limitations" in `CLAUDE.md`). `cmark-lua` (the earlier
-recommendation here) is a SWIG wrapper around `libcmark` — not
-portable to `wasm32-wasip1` — so we went with LPeg + lunamark,
-matching pandoc's own custom-reader convention
-(`pandoc.lpeg` / `pandoc.re`).
+`grid tables` remains a tactical follow-up; delimiter-run emphasis
+and full HTML-block precedence are out of scope — if a pitch ever
+demands that depth we reach for cmark-gfm instead of pushing lunamark
+further.
 
-The parity scorecard (`tests/commonmark_spec.rs`) tracks per-section
-improvement as each gap closes.
+Current state after the fork: 34.2 % CommonMark pass rate
+(223 / 652). 7 of 15 canonical fixtures pass strict AST parity with
+pandoc 3.9; 8 are smoke-only pending the work above
+(`tests/markdown_reader_parity.rs` `SMOKE_ONLY` and "Known
+limitations" in `CLAUDE.md`). The parity scorecard
+(`tests/commonmark_spec.rs`) tracks per-section improvement as each
+gap closes.
 
 ## Polish
 

@@ -339,8 +339,9 @@ implementation blockers until both measurements are in hand.
    depend on": indented + fenced code, ATX/Setext headings with
    GitHub-slug auto ids, nested lists, GFM task lists / strikethrough
    / autolinks / footnotes. See `ROADMAP.md` Next #3 for the
-   detailed rescope. (`scripts/vendor/lunamark/`, amalgamator in
-   `build.rs`.)
+   detailed rescope. Lunamark is now forked at `scripts/lunamark/`
+   (see `scripts/lunamark/FORKED_FROM`); grammar edits land directly.
+   Amalgamator lives in `build.rs`.
 2. **`ipynb` reader.** Unlocks JupyterLite / Jupyter-ecosystem
    targets. New Lua reader on top of the markdown reader; small.
 3. **Slides writer — reveal.js (and eventually beamer).** Required

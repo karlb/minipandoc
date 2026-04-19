@@ -1,0 +1,6 @@
+github.com/jgm/lunamark @ 708c67068c0676b60935b019000c0dbbb972da2f (2024-07-01)
+
+Forked into this tree; we now own the grammar. Upstream has been
+dormant since the SHA above, and we need edits (CommonMark block
+fixes, pandoc-markdown extensions) that the vendored-unchanged rule
+forbade. See ROADMAP.md "Markdown reader" for the work queue.
