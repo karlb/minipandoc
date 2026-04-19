@@ -151,9 +151,14 @@ and full HTML-block precedence are out of scope — if a pitch ever
 demands that depth we reach for cmark-gfm instead of pushing lunamark
 further.
 
-Current state after the fork: 34.2 % CommonMark pass rate
-(223 / 652). 7 of 15 canonical fixtures pass strict AST parity with
-pandoc 3.9; 8 are smoke-only pending the work above
+Current state (post PR 1, ATX grammar fixes): 39.0 % CommonMark
+pass rate (254 / 652). The scorecard now runs with
+`-f markdown-auto_identifiers-smart` so pandoc-markdown extras
+don't count against grammar conformance — numbers here are not
+directly comparable to the 33.3 % recorded in
+`notes/measurements.md`, which used the default `-f markdown`.
+7 of 15 canonical fixtures pass strict AST parity with pandoc 3.9;
+8 are smoke-only pending the work above
 (`tests/markdown_reader_parity.rs` `SMOKE_ONLY` and "Known
 limitations" in `CLAUDE.md`). The parity scorecard
 (`tests/commonmark_spec.rs`) tracks per-section improvement as each

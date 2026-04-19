@@ -1,9 +1,11 @@
 //! M1 — CommonMark spec-suite pass rate for the markdown reader.
 //!
 //! Runs every example in `scripts/vendor/commonmark/spec.txt` through
-//! `minipandoc -f markdown -t html` and reports the pass rate. This is a
-//! scorecard, not a conformance guard — the top-level test is `#[ignore]`
-//! so `cargo test` does not fail on unmet targets. Run explicitly with:
+//! `minipandoc -f markdown-auto_identifiers-smart -t html` (pandoc-
+//! markdown extras off so the scorecard measures grammar, not our
+//! extension defaults) and reports the pass rate. This is a scorecard,
+//! not a conformance guard — the top-level test is `#[ignore]` so
+//! `cargo test` does not fail on unmet targets. Run explicitly with:
 //!
 //!     cargo test --test commonmark_spec -- --ignored --nocapture
 //!
@@ -286,8 +288,12 @@ fn m1_scorecard() {
         let row = section_totals.last_mut().unwrap();
         row.1 += 1;
 
+        // Disable pandoc-markdown extensions that add output not present
+        // in the CommonMark spec (auto-generated header ids, smart
+        // punctuation). This keeps the scorecard a grammar-conformance
+        // measurement rather than a pandoc-markdown-vs-CommonMark test.
         let (ok, stdout, _stderr) = common::run_minipandoc(
-            &["-f", "markdown", "-t", "html"],
+            &["-f", "markdown-auto_identifiers-smart", "-t", "html"],
             ex.markdown.as_bytes(),
             None,
         );

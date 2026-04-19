@@ -639,6 +639,13 @@ parsers.pandoc_author = parsers.spacechar * parsers.optionalspace
 parsers.HeadingStart = #parsers.hash * C(parsers.hash^-6)
                      * -parsers.hash / length
 
+-- CommonMark: the opening hash sequence must be followed by at least
+-- one space/tab, or end of line (empty heading). Without this,
+-- `#5 bolt` and `#hashtag` parse as H1s, which predates the spec.
+parsers.AtxAfterHashes = parsers.spacechar^1
+                       + #parsers.newline
+                       + parsers.eof
+
 -- parse setext header ending and return level
 parsers.HeadingLevel = parsers.equal^1 * Cc(1) + parsers.dash^1 * Cc(2)
 
@@ -1608,8 +1615,12 @@ function M.new(writer, options)
     larsers.setextHeadLine  = ((parsers.linechar - (parsers.attributes * parsers.newline))^0 / parse_inlines
                               * Cg(parsers.attributes + Ct(""), "attrs"))
                               * parsers.newline
-    -- parse atx header
-    larsers.AtxHeader = Cg(parsers.HeadingStart,"level")
+    -- parse atx header. CommonMark permits up to 3 leading spaces of
+    -- indentation and requires the hash sequence to be followed by
+    -- whitespace or end-of-line.
+    larsers.AtxHeader = parsers.nonindentspace
+                        * Cg(parsers.HeadingStart,"level")
+                        * parsers.AtxAfterHashes
                         * parsers.optionalspace
                         * larsers.atxHeadLine
                         * Cb("level")
@@ -1624,8 +1635,10 @@ function M.new(writer, options)
                           * Cb("attrs")
                           / writer.header
   else
-    -- parse atx header
-    larsers.AtxHeader = Cg(parsers.HeadingStart,"level")
+    -- parse atx header (see comment above for the CommonMark rules)
+    larsers.AtxHeader = parsers.nonindentspace
+                        * Cg(parsers.HeadingStart,"level")
+                        * parsers.AtxAfterHashes
                         * parsers.optionalspace
                         * (C(parsers.line) / strip_atx_end / parse_inlines)
                         * Cb("level")
