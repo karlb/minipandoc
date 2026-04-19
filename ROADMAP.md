@@ -73,22 +73,28 @@ CHANGELOG / git log has the detail.
 Priority-ordered. Each is scoped small enough to ship as its own
 milestone.
 
-### 1. Measurements — scope the markdown reader overhaul
+### 1. Measurements — scope the markdown reader overhaul ✓
 
-Two cheap measurements gate the rest of the next queue (see
-[`notes/use-cases.md`](notes/use-cases.md) "Measurements first"):
+Both gating measurements landed — see
+[`notes/measurements.md`](notes/measurements.md):
 
-- **M1 — CommonMark spec-suite pass rate.** Run the canonical
-  `commonmark/CommonMark` spec tests through
-  `minipandoc -f markdown -t html` and report pass rate + top
-  failure categories. Determines the scope of #3 below and whether
-  the mdBook replacement experiment (use-cases §1) is viable at all
-  (~95%+ target).
-- **M2 — markdown-reader throughput** vs `pulldown-cmark` on
-  `rust-lang/book` or a similar large corpus. Ratio > 10× kills the
-  SSG experiment regardless of conformance.
+- **M1 — CommonMark spec-suite pass rate: 33.3 %** (217 / 652).
+  Block parsing (tabs, indented/fenced code, headings, lists, HTML
+  blocks, block quotes, paragraphs) is where the damage is; inline
+  parsing is roughly half-right. Scoreboard test at
+  `tests/commonmark_spec.rs` (`#[ignore]`-gated).
+- **M2 — throughput: ~365× slower** than `pulldown-cmark` on
+  `rust-lang/book` (3.89 s vs 10.7 ms). Bench harness at
+  `bench/m2_markdown_throughput.sh` + `bench/pulldown_cmark_bench/`.
 
-Both are reports, not code changes. Run before committing to #3.
+**Consequences, applied below:**
+
+- **Use-cases §1 (mdBook/Zola replacement) is killed by M2.** No
+  feasible parser rewrite closes a 365× gap against handwritten
+  Rust. Dropped from the priority list.
+- **#3 is rescoped** away from "~95 % CommonMark + GFM" to
+  "fix the blocks our committed pitches (0a JupyterLite, 0b
+  HedgeDoc) actually depend on."
 
 ### 2. npm package for the WASM build
 
@@ -97,15 +103,28 @@ Packaging unblocks downstream adoption and exercises the stable
 public API surface (`convert(input, from, to, opts)` in
 `web/minipandoc.mjs`). Success-signal #4 depends on this.
 
-### 3. Markdown reader — CommonMark conformance + GFM
+### 3. Markdown reader — target-driven block parity
 
-Goal: pass the CommonMark spec suite at ~95%+ and implement the GFM
-extensions SSG and note-editor users depend on — task lists,
-strikethrough, autolinks, footnotes, and **GitHub-slug auto header
-ids** (currently our biggest gap; silent anchor breakage today).
-Unblocks the mdBook replacement experiment (use-cases §1),
-JupyterLite (§0a), HedgeDoc (§0b), and Zettelkasten tools (§5).
-**Scope depends on M1** — some of the work below may already pass.
+Goal, rescoped post-M1/M2: fix the block-level constructs the
+committed pitches (0a JupyterLite, 0b HedgeDoc, 5 Zettelkasten) need,
+not the full CommonMark spec. 33 % spec conformance (M1) is not
+worth rebuilding the grammar to 95 % — M2 already removed the SSG
+replacement carrot that justified that scope.
+
+Concretely: close the block-level gaps that actually bite downstream
+users, verify via `tests/commonmark_spec.rs` per-section deltas:
+
+- **Indented + fenced code blocks** (currently 0/12 and 1/29). Tab
+  handling inside code is completely wrong; fence indent tolerance
+  is off. Required for every downstream pitch.
+- **ATX/Setext headings** (2/18 and 1/27). Including **GitHub-slug
+  auto header ids** — silent anchor breakage today and a hard
+  requirement for HedgeDoc/Zettelkasten docs.
+- **Lists** (4/27 Lists, 7/48 List items). Nested lists and list
+  continuation are lunamark's biggest semantic gap.
+- **GFM extensions relevant to the committed pitches**: task lists,
+  strikethrough, autolinks, footnotes. (`grid tables` and TeX math
+  remain tactical follow-ups only once above lands.)
 
 Current state: LPeg 1.1.0 + `jgm/lunamark` are vendored;
 `scripts/readers/markdown.lua` is an in-tree bridge that drives
@@ -118,18 +137,8 @@ portable to `wasm32-wasip1` — so we went with LPeg + lunamark,
 matching pandoc's own custom-reader convention
 (`pandoc.lpeg` / `pandoc.re`).
 
-Tactical follow-ups beyond what the CommonMark/GFM goals directly
-demand:
-- Unindented footnote bodies (pandoc's default writer form).
-- Nested bullet / ordered lists (biggest semantic gap).
-- Key-value attribute propagation on headers / link_attributes.
-- Pandoc's "simple" indented table form.
-- Grid tables (lunamark doesn't parse these at all).
-- TeX math (`$…$`, `$$…$$`).
-- `escaped_line_breaks` → SoftBreak parity.
-
-This unblocks success-signal #3 end-to-end; the parity scorecard
-catches regressions as each gap closes.
+The parity scorecard (`tests/commonmark_spec.rs`) tracks per-section
+improvement as each gap closes.
 
 ## Polish
 

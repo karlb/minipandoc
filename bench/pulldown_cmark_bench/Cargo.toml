@@ -1,0 +1,16 @@
+[package]
+name = "pulldown_cmark_bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "pulldown_cmark_bench"
+path = "src/main.rs"
+
+[dependencies]
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

@@ -120,7 +120,15 @@ unoccupied niche in the browser. Ranked.
   client-side improvements; likely lands as a frontend PR toggling the
   existing export menu to a wasm path.
 
-### 1. Rust static-site generators (mdBook, Zola) — replacement experiment
+### 1. Rust static-site generators (mdBook, Zola) — replacement experiment [KILLED BY M2]
+
+**Verdict: not feasible.** M2 measured minipandoc at **~365× slower**
+than `pulldown-cmark` on `rust-lang/book` (3.89 s vs 10.7 ms).
+`notes/use-cases.md` set 10× as the kill threshold; we're 36× past
+it. No parser rewrite closes that gap while preserving our Lua +
+LPeg artifact shape. M1 (33 % CommonMark pass rate) reinforces the
+call but is redundant given M2. See `notes/measurements.md` for the
+numbers. Historical rationale kept below for context.
 
 Framed as a **replacement experiment**, not a preprocessor / plugin
 pitch. The preprocessor pitch is weak: it only helps users who opt in,
@@ -311,25 +319,28 @@ measurements** below — they are cheap, fast, and determine the scope
 of everything that follows. Do not commit to the numbered
 implementation blockers until both measurements are in hand.
 
-### Measurements first (do these before any implementation)
+### Measurements first (done — see `notes/measurements.md`)
 
-- **M1. CommonMark spec-suite pass rate** for our markdown reader.
-  Run the canonical spec tests against `scripts/readers/markdown.lua`.
-  Determines the scope of blocker 1 and whether the SSG replacement
-  experiment (section 1) is even viable at ~95%+ conformance.
-- **M2. Markdown-reader throughput** vs `pulldown-cmark` on a large
-  corpus (e.g., `rust-lang/book`, ~500 pages). If we're >10× slower,
-  section 1 dies regardless of conformance and focus shifts to 0a,
-  0b, 3, 6, 7.
+- **M1 — CommonMark pass rate: 33.3 %** (217 / 652). Block parsing
+  dominates the failure set. Far below ~95 %. Kept as an ongoing
+  regression guard at `tests/commonmark_spec.rs` (`#[ignore]`-gated).
+- **M2 — throughput: ~365× slower than `pulldown-cmark`** on
+  `rust-lang/book` (3.89 s vs 10.7 ms on the full 1.2 MB corpus).
+  Bench at `bench/m2_markdown_throughput.sh`.
+- **Outcome**: section 1 (SSG replacement) killed. Focus shifts to
+  0a, 0b, 3, 6, 7.
 
 ### Implementation blockers (post-measurement)
 
-1. **Markdown reader overhaul: CommonMark conformance + GFM (task
-   lists, strikethrough, autolinks, footnotes, GitHub-slug auto
-   header ids) + grid tables + TeX math.** Largest chunk of work on
-   the list; unlocks the SSG replacement experiment, JupyterLite,
-   HedgeDoc, and Zettelkasten tools. Scope depends on M1.
-   (`scripts/vendor/lunamark/`, amalgamator in `build.rs:72-100`.)
+1. **Markdown reader — block-level fixes for the committed pitches
+   (0a, 0b, 5).** Post-M1/M2 this is *no longer* "reach 95 %
+   CommonMark"; it is "close the block-level constructs that 0a
+   (JupyterLite), 0b (HedgeDoc), and 5 (Zettelkasten) actually
+   depend on": indented + fenced code, ATX/Setext headings with
+   GitHub-slug auto ids, nested lists, GFM task lists / strikethrough
+   / autolinks / footnotes. See `ROADMAP.md` Next #3 for the
+   detailed rescope. (`scripts/vendor/lunamark/`, amalgamator in
+   `build.rs`.)
 2. **`ipynb` reader.** Unlocks JupyterLite / Jupyter-ecosystem
    targets. New Lua reader on top of the markdown reader; small.
 3. **Slides writer — reveal.js (and eventually beamer).** Required
@@ -410,7 +421,6 @@ This plan file is a living artifact with two roles:
    list. Update in place as measurements come in, blockers close, or
    upstream-appetite signals shift the priorities.
 
-Current priority pitches: **0a (JupyterLite)** and **1 (mdBook
-replacement experiment)**. The experiment's viability is unknown
-pending **M1** (CommonMark pass rate) and **M2** (markdown-reader
-throughput) — run these first.
+Current priority pitches (post-M1/M2): **0a (JupyterLite)** and
+**0b (HedgeDoc)**. Section 1 (mdBook replacement experiment) has
+been killed by M2 — see `notes/measurements.md`.

@@ -1,2 +1,4 @@
 /target
 Cargo.lock
+/bench/pulldown_cmark_bench/target
+/bench/pulldown_cmark_bench/Cargo.lock
