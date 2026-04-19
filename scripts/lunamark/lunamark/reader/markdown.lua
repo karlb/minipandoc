@@ -6,9 +6,9 @@ local lpeg = require("lpeg")
 local entities = require("lunamark.entities")
 local lower, upper, gsub, format, length =
   string.lower, string.upper, string.gsub, string.format, string.len
-local P, R, S, V, C, Cg, Cb, Cmt, Cc, Ct, B, Cs, Cf =
+local P, R, S, V, C, Cg, Cb, Cmt, Cc, Ct, B, Cs, Cf, Cp =
   lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cg, lpeg.Cb,
-  lpeg.Cmt, lpeg.Cc, lpeg.Ct, lpeg.B, lpeg.Cs, lpeg.Cf
+  lpeg.Cmt, lpeg.Cc, lpeg.Ct, lpeg.B, lpeg.Cs, lpeg.Cf, lpeg.Cp
 local lpegmatch = lpeg.match
 local expand_tabs_in_line = util.expand_tabs_in_line
 local utf8_lower do
@@ -211,6 +211,87 @@ parsers.bullet     = ( parsers.bulletchar * #parsers.spacing
                      + parsers.space * parsers.space * parsers.space
                                      * parsers.bulletchar * #parsers.spacing
                      )
+
+-- 0-indexed column of `pos` within `subject` (i.e. bytes since the
+-- most recent line boundary before pos, or since start-of-subject).
+-- The `\001` sentinel lunamark inserts between a tight list item
+-- and its NestedList content is treated as a line boundary too,
+-- so columns inside nested content are measured from the nested
+-- line start, not from the outer line.
+local function column_of(subject, pos)
+  local i = pos - 1
+  while i >= 1 do
+    local c = subject:sub(i, i)
+    if c == "\n" or c == "\001" then return pos - i - 1 end
+    i = i - 1
+  end
+  return pos - 1
+end
+
+-- List-item column tracking.
+--
+-- CommonMark requires list items at the same column to be siblings,
+-- and deeper-indented content to become nested/continuation. Lunamark
+-- historically doesn't track column — `parsers.bullet` and
+-- `larsers.enumerator` match markers at any of 0–3 (0–2 for digits)
+-- leading spaces, so `  - nested` under `- top` parses as a sibling
+-- and nested lists flatten.
+--
+-- Fix: a small Lua-side stack of list columns driven by Cmt
+-- callbacks. `first_list_marker` pushes the glyph column of the
+-- opening marker; `same_list_marker` checks the current glyph column
+-- against the top of the stack.
+--
+-- Backtracking caveat: LPeg reverts its own captures on backtrack,
+-- but a Cmt side effect (our push) does not. In practice
+-- BulletList / OrderedList / TaskList alternatives all start with
+-- `first_list_marker` as the first matcher, so a failed alternative
+-- pushes once and the next alternative re-pushes (overwriting the
+-- top of the stack) — no stale state escapes. Cross-list isolation
+-- is handled in `create_parser` below, which snapshots and restores
+-- the stack depth around every parse_blocks / parse_inlines call.
+
+-- Find the column of the bullet/enumerator glyph inside the match.
+-- `parsers.bullet` / `larsers.enumerator` consume optional leading
+-- whitespace before the glyph, so the match's *start* position sits
+-- at column 0 for an indented marker like `  - nested`. Walk past
+-- the leading whitespace and return the column of the actual glyph.
+local function glyph_column(s, startp, endp)
+  local i = startp
+  while i < endp do
+    local c = s:sub(i, i)
+    if c ~= " " and c ~= "\t" then break end
+    i = i + 1
+  end
+  return column_of(s, i)
+end
+
+local list_col_stack = {}
+
+-- Cmt's function receives (subject, pos, startp, marker_captures...).
+-- `first_list_marker` pushes the column and passes marker's captures
+-- through untouched (so a taskbullet's `[x]` capture or an
+-- enumerator's digit capture survives).
+local function first_list_marker(marker)
+  return Cmt(Cp() * marker,
+    function(s, endp, ...)
+      local startp = (...)
+      list_col_stack[#list_col_stack + 1] = glyph_column(s, startp, endp)
+      return endp, select(2, ...)
+    end)
+end
+
+local function same_list_marker(marker)
+  return Cmt(Cp() * marker,
+    function(s, endp, ...)
+      local startp = (...)
+      local expected = list_col_stack[#list_col_stack]
+      if expected and glyph_column(s, startp, endp) == expected then
+        return endp, select(2, ...)
+      end
+      return false
+    end)
+end
 
 -----------------------------------------------------------------------------
 -- Parsers used for markdown code spans
@@ -893,7 +974,16 @@ function M.new(writer, options)
 
   local function create_parser(name, grammar)
     return function(str)
+      -- Snapshot the list-column stack around each (possibly nested)
+      -- parse so an inner list's `first_list_marker` push doesn't
+      -- leak back to the outer scope's `same_list_marker` check.
+      -- LPeg gives no end-of-match hook, so we pop at the Lua call
+      -- boundary.
+      local saved_depth = #list_col_stack
       local res = lpeg.match(grammar(), str)
+      for i = #list_col_stack, saved_depth + 1, -1 do
+        list_col_stack[i] = nil
+      end
       if res == nil then
         error(format("%s failed on:\n%s", name, str:sub(1,20)))
       else
@@ -1452,16 +1542,27 @@ function M.new(writer, options)
                           return checked:upper() -- Just normalize it in uppercase
                         end
 
+  -- `starter` is the union of list-marker shapes, used in ListBlockLine
+  -- to terminate an item's body when ANY deeper marker appears (so the
+  -- nested content isn't greedily eaten as continuation text).
+  --
+  -- `same_col_starter` is the same union restricted to the current
+  -- list's column; it's used in NestedList so deeper-indented markers
+  -- fall through and get captured as nested content (re-parsed via
+  -- parse_blocks recursion into their own sub-list).
+  local all_markers
   if options.task_list then
-    larsers.starter = larsers.taskbullet + parsers.bullet + larsers.enumerator
+    all_markers = larsers.taskbullet + parsers.bullet + larsers.enumerator
   else
-    larsers.starter = parsers.bullet + larsers.enumerator
+    all_markers = parsers.bullet + larsers.enumerator
   end
+  larsers.starter          = all_markers
+  larsers.same_col_starter = same_list_marker(all_markers)
 
   -- we use \001 as a separator between a tight list item and a
   -- nested list under it.
   larsers.NestedList            = Cs((parsers.optionallyindentedline
-                                     - larsers.starter)^1)
+                                     - larsers.same_col_starter)^1)
                                 / function(a) return "\001"..a end
 
   larsers.ListBlockLine         = parsers.optionallyindentedline
@@ -1488,9 +1589,17 @@ function M.new(writer, options)
                ) / parse_blocks
   end
 
-  larsers.BulletList = ( Ct(larsers.TightListItem(parsers.bullet)^1) * Cc(true)
-                       * parsers.skipblanklines * -parsers.bullet
-                       + Ct(larsers.LooseListItem(parsers.bullet)^1) * Cc(false)
+  -- First bullet establishes the list column via `first_list_marker`;
+  -- subsequent siblings are required to match that column by
+  -- `same_list_marker`. Deeper-indented markers fall through to
+  -- NestedList and become nested children via parse_blocks recursion.
+  local bullet_first = first_list_marker(parsers.bullet)
+  local bullet_same  = same_list_marker(parsers.bullet)
+  larsers.BulletList = ( Ct(larsers.TightListItem(bullet_first)
+                          * larsers.TightListItem(bullet_same)^0) * Cc(true)
+                       * parsers.skipblanklines * -bullet_same
+                       + Ct(larsers.LooseListItem(bullet_first)
+                          * larsers.LooseListItem(bullet_same)^0) * Cc(false)
                        * parsers.skipblanklines )
                      / writer.bulletlist
 
@@ -1502,12 +1611,19 @@ function M.new(writer, options)
                               options.fancy_lists and numdelim or "Default")
   end
 
-  larsers.OrderedList = Cg(larsers.enumerator, "listtype") *
+  -- OrderedList's first enumerator is captured under "listtype" so
+  -- the first item can use it as a zero-width Cb starter (matches
+  -- nothing but carries the style through). We also push its column
+  -- to the list_col_stack (via first_list_marker_keep, which passes
+  -- the enumerator string capture through). Subsequent items use
+  -- same_list_marker to require matching column.
+  local enum_same = same_list_marker(larsers.enumerator)
+  larsers.OrderedList = Cg(first_list_marker(larsers.enumerator), "listtype") *
                       ( Ct(larsers.TightListItem(Cb("listtype"))
-                          * larsers.TightListItem(larsers.enumerator)^0)
-                      * Cc(true) * parsers.skipblanklines * -larsers.enumerator
+                          * larsers.TightListItem(enum_same)^0)
+                      * Cc(true) * parsers.skipblanklines * -enum_same
                       + Ct(larsers.LooseListItem(Cb("listtype"))
-                          * larsers.LooseListItem(larsers.enumerator)^0)
+                          * larsers.LooseListItem(enum_same)^0)
                       * Cc(false) * parsers.skipblanklines
                       ) * Cb("listtype") / ordered_list
 
@@ -1531,9 +1647,13 @@ function M.new(writer, options)
               ) / gather_ticklist_item
   end
 
-  larsers.TaskList = ( Ct(larsers.TightTaskListItem(larsers.taskbullet)^1) * Cc(true)
-                        * parsers.skipblanklines * -larsers.taskbullet
-                        + Ct(larsers.LooseTaskListItem(larsers.taskbullet)^1) * Cc(false)
+  local task_first = first_list_marker(larsers.taskbullet)
+  local task_same  = same_list_marker(larsers.taskbullet)
+  larsers.TaskList = ( Ct(larsers.TightTaskListItem(task_first)
+                         * larsers.TightTaskListItem(task_same)^0) * Cc(true)
+                        * parsers.skipblanklines * -task_same
+                        + Ct(larsers.LooseTaskListItem(task_first)
+                         * larsers.LooseTaskListItem(task_same)^0) * Cc(false)
                         * parsers.skipblanklines
                       ) / writer.tasklist
 

@@ -103,9 +103,9 @@ const SMOKE_ONLY: &[&str] = &[
     // (footnote.md now graduates to strict parity — the two-pass
     // NoteBlock/Reference prescan lets refs resolve even when the
     // def comes after the use, since PR 3 fork edits.)
-    // Nested bullet lists: lunamark's list parser doesn't recognize
-    // indentation-based nesting the way pandoc does.
-    "lists.md",
+    // (lists.md now graduates to strict parity — column-tracking
+    // list markers recognize nested bullet/ordered/task lists
+    // since the PR 4 fork edits.)
     // YAML metadata: lunamark's pandoc_title_blocks only handles the
     // `% Title / % Author / % Date` form; pandoc-writer emits `---` /
     // `...` YAML blocks that lunamark treats as content.
