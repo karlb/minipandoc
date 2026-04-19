@@ -142,9 +142,21 @@ Ordered by cost vs pitch leverage:
    recursive parse. Landed (commit [`5e2b70b`](#)); graduated
    `lists.md` (strict pandoc AST parity). Biggest downstream win
    for HedgeDoc.
-5. **Indented + fenced code blocks** (today 0/12 and 1/29). Tab
-   handling inside code is completely wrong; fence indent tolerance
-   is off. Required for every downstream pitch.
+5. **Indented + fenced code blocks ✓** — was 0/12 and 1/29 at PR 4
+   close; three fixes landed together because they shared root causes:
+   the `pandoc.layout` renderer collapsed embedded `\n\n` in a `lit`
+   down to a single break (the `cr` token is conditional on line
+   content), so blank lines inside code bodies were lost; the bridge's
+   `w.code` preserved lunamark's raw code-span text instead of pandoc's
+   strip-whitespace / collapse-newlines normalization; and the spec
+   scorecard penalized every code-block output for pandoc 3.9's HTML
+   convention of not emitting `\n` before `</code></pre>`. Now 9/12
+   indented, 17/29 fenced, 16/22 code spans. The remaining misses in
+   each section are pandoc divergences (code-block `class="ruby"` vs
+   spec `class="language-ruby"`, unclosed fence at EOF → paragraph,
+   loose-list `<li>` wrapping), not grammar bugs. Also drive-by: made
+   `parsers.attrlist` preserve source order so header_attrs.md stops
+   flaking (`pairs()` order was unspecified for `{foo=bar baz=qq}`).
 6. **GFM extensions relevant to the committed pitches**: task lists,
    strikethrough, autolinks, footnotes — verify against GFM fixtures
    once 1–5 land.
@@ -156,11 +168,12 @@ and full HTML-block precedence are out of scope — if a pitch ever
 demands that depth we reach for cmark-gfm instead of pushing lunamark
 further.
 
-Current state (through PR 4): 43.1 % CommonMark pass rate
-(281 / 652). The scorecard now runs with
+Current state (through PR 5): 50.0 % CommonMark pass rate
+(326 / 652). The scorecard runs with
 `-f markdown-auto_identifiers-smart` so pandoc-markdown extras
-don't count against grammar conformance — numbers here are not
-directly comparable to the 33.3 % recorded in
+don't count against grammar conformance, and strips `\n</code></pre>`
+from both sides so pandoc's HTML-writer convention doesn't either —
+numbers here are not directly comparable to the 33.3 % recorded in
 `notes/measurements.md`, which used the default `-f markdown`.
 11 of 15 canonical fixtures pass strict AST parity with pandoc 3.9
 (was 7); 4 remain smoke-only pending the work above
