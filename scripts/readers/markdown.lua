@@ -1,9 +1,10 @@
--- Markdown reader: thin bridge over vendored lunamark.
+-- Markdown reader: thin bridge over our forked lunamark.
 --
--- lunamark (jgm/lunamark) is an LPeg-based markdown parser. It's writer
--- agnostic — the caller supplies a writer table whose callbacks build up
--- the output. This file supplies a writer that constructs pandoc AST
--- elements directly.
+-- lunamark (jgm/lunamark, forked in-tree at scripts/lunamark/ — see
+-- scripts/lunamark/FORKED_FROM) is an LPeg-based markdown parser. It's
+-- writer-agnostic: the caller supplies a writer table whose callbacks
+-- build up the output. This file supplies a writer that constructs
+-- pandoc AST elements directly.
 --
 -- Panluna (tarleb/panluna) is the canonical pandoc-AST writer for
 -- lunamark, but it relies on pandoc's elements being distinguishable
@@ -117,13 +118,22 @@ local function to_attr(a)
   if a == nil then return nil end
   if type(a) ~= "table" then return nil end
   if a.tag == "Attr" then return a end
-  -- Keyword form: {class="foo"} or {id="x", class="y z"}
+  -- Keyword form: {class="foo"} or {id="x", class="y z"}.
+  -- lunamark's `parsers.attributes` produces this shape and also folds
+  -- `key=value` pairs into the same table, so anything that isn't the
+  -- special `id`/`class` keys is an attribute for pandoc's kvs slot.
   if a.class or a.id then
     local classes = {}
     if a.class then
       for tok in tostring(a.class):gmatch("%S+") do classes[#classes + 1] = tok end
     end
-    return pandoc.Attr(a.id or "", classes, {})
+    local kvs = {}
+    for k, v in pairs(a) do
+      if k ~= "id" and k ~= "class" and type(k) == "string" then
+        kvs[#kvs + 1] = { k, tostring(v) }
+      end
+    end
+    return pandoc.Attr(a.id or "", classes, kvs)
   end
   -- Positional: { id, classes, kvs }
   return pandoc.Attr(a[1] or "", a[2] or {}, a[3] or {})
@@ -322,7 +332,14 @@ local function make_writer(auto_ids)
     return pandoc.LineBlock(out)
   end
   w.div = function(blocks, attr)
-    return pandoc.Div(collect_blocks(blocks), to_attr(attr))
+    -- Same tight/loose handling as BlockQuote: lunamark may hand us a
+    -- Plain for a trailing paragraph-like block, but pandoc always
+    -- emits Para at the Div boundary.
+    local bs = collect_blocks(blocks)
+    for i, b in ipairs(bs) do
+      if b.tag == "Plain" then bs[i] = pandoc.Para(b.content) end
+    end
+    return pandoc.Div(bs, to_attr(attr))
   end
 
   -- Footnotes: the argument is either a block rope (block notes) or an
@@ -477,7 +494,15 @@ function Reader(input, opts)
     if exts.auto_identifiers == false then auto_ids = false end
   end
   local parser = mdreader.new(make_writer(auto_ids), options)
-  local blocks, meta = parser(tostring(input))
+  -- Several of lunamark's block parsers (NoteBlock, FencedCodeBlock,
+  -- Blockquote, …) terminate on `blankline^1`, so a block at EOF without
+  -- a trailing blank line causes the parser to fall back to Paragraph.
+  -- Pandoc tolerates unterminated blocks at EOF; append a sentinel pair
+  -- of newlines so our output matches. Harmless when the input already
+  -- ends in whitespace.
+  local src = tostring(input)
+  if not src:find("\n\n$") then src = src .. "\n\n" end
+  local blocks, meta = parser(src)
   blocks = blocks or pandoc.Blocks{}
   -- Lunamark emits writer.plain for paragraph-like blocks that end the
   -- document or lack a trailing blank line. Pandoc only emits Plain
