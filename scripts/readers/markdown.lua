@@ -253,11 +253,11 @@ local function make_writer(auto_ids)
   w.singlequoted = function(x) return pandoc.Quoted("SingleQuote", collect_inlines(x)) end
   w.doublequoted = function(x) return pandoc.Quoted("DoubleQuote", collect_inlines(x)) end
   w.code        = function(text, attr) return pandoc.Code(text, to_attr(attr)) end
-  w.link        = function(inlines, url, title)
-    return pandoc.Link(collect_inlines(inlines), url, title or "")
+  w.link        = function(inlines, url, title, attr)
+    return pandoc.Link(collect_inlines(inlines), url, title or "", to_attr(attr))
   end
-  w.image       = function(inlines, src, title)
-    return pandoc.Image(collect_inlines(inlines), src, title or "")
+  w.image       = function(inlines, src, title, attr)
+    return pandoc.Image(collect_inlines(inlines), src, title or "", to_attr(attr))
   end
   w.span        = function(inlines, attr)
     local a = to_attr(attr)

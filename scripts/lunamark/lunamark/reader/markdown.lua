@@ -165,21 +165,24 @@ parsers.attrvalue   = (parsers.dquote
                       * parsers.squote)
                     + C((parsers.anyescaped - parsers.dquote - parsers.space - P("}"))^1)
 
+-- Pandoc allows attribute blocks to wrap across lines (`{#id\n.class
+-- key=v}`), so internal separators use `parsers.spnl` (which tolerates
+-- a single optional newline) rather than `parsers.optionalspace`.
 parsers.attrpair    = Cg(C(parsers.attrid)
-                      * parsers.optionalspace * parsers.equal * parsers.optionalspace
+                      * parsers.spnl * parsers.equal * parsers.spnl
                       * parsers.attrvalue)
-                      * parsers.optionalspace^-1
+                      * parsers.spnl^-1
 parsers.attrlist    = Cf(Ct("") * parsers.attrpair^0, rawset)
 
 parsers.class       = (P("-") * Cc("unnumbered")) + (parsers.period * C((parsers.attrid)^1))
-parsers.classes     = (parsers.class * parsers.optionalspace)^0
+parsers.classes     = (parsers.class * parsers.spnl)^0
 
 parsers.hashid      = parsers.hash * C((parsers.alphanumeric + S("-_:."))^1)
 
-parsers.attributes  = P("{") * parsers.optionalspace
-                      * Cg(parsers.hashid^-1) * parsers.optionalspace
+parsers.attributes  = P("{") * parsers.spnl
+                      * Cg(parsers.hashid^-1) * parsers.spnl
                       * Ct(parsers.classes) * Cg(parsers.attrlist)
-                      * parsers.optionalspace * P("}")
+                      * parsers.spnl * P("}")
                       / function (hashid, classes, attr)
                           attr.id = hashid ~= "" and hashid or nil
                           attr.class = table.concat(classes or {}, " ")
@@ -187,10 +190,10 @@ parsers.attributes  = P("{") * parsers.optionalspace
                         end
 -- Raw attributes similar to Pandoc (=format key=value key2="value 2")
 parsers.rawid            = parsers.alphanumeric + S("_-")
-parsers.raw              = parsers.equal * C((parsers.rawid)^1) * parsers.optionalspace
-parsers.rawattributes    = P("{") * parsers.optionalspace
+parsers.raw              = parsers.equal * C((parsers.rawid)^1) * parsers.spnl
+parsers.rawattributes    = P("{") * parsers.spnl
                           * parsers.raw * Cg(parsers.attrlist)
-                          * parsers.optionalspace * P("}")
+                          * parsers.spnl * P("}")
 
 -----------------------------------------------------------------------------
 -- Parsers used for markdown lists
@@ -1257,41 +1260,51 @@ function M.new(writer, options)
                             return writer.link(writer.string(email),"mailto:"..email)
                           end
 
-  larsers.DirectLink    = (parsers.tag / parse_inlines_no_link)  -- no links inside links
-                        * parsers.spnl
-                        * parsers.lparent
-                        * (parsers.url + Cc(""))  -- link can be empty [foo]()
-                        * parsers.optionaltitle
-                        * parsers.rparent
-                        / writer.link
+  if options.link_attributes then
+    -- Support additional attributes on both links and images, matching
+    -- pandoc's `link_attributes` extension.
+    larsers.DirectLink    = (parsers.tag / parse_inlines_no_link)
+                          * parsers.spnl
+                          * parsers.lparent
+                          * (parsers.url + Cc(""))
+                          * parsers.optionaltitle
+                          * parsers.rparent
+                          * (parsers.attributes + Ct(""))
+                          / writer.link
+
+    larsers.DirectImage   = parsers.exclamation
+                          * (parsers.tag / parse_inlines)
+                          * parsers.spnl
+                          * parsers.lparent
+                          * (parsers.url + Cc(""))
+                          * parsers.optionaltitle
+                          * parsers.rparent
+                          * (parsers.attributes + Ct(""))
+                          / writer.image
+  else
+    larsers.DirectLink    = (parsers.tag / parse_inlines_no_link)
+                          * parsers.spnl
+                          * parsers.lparent
+                          * (parsers.url + Cc(""))
+                          * parsers.optionaltitle
+                          * parsers.rparent
+                          / writer.link
+
+    larsers.DirectImage   = parsers.exclamation
+                          * (parsers.tag / parse_inlines)
+                          * parsers.spnl
+                          * parsers.lparent
+                          * (parsers.url + Cc(""))
+                          * parsers.optionaltitle
+                          * parsers.rparent
+                          / writer.image
+  end
 
   larsers.IndirectLink  = parsers.tag * (C(parsers.spnl) * parsers.tag)^-1
                         / indirect_link
 
   -- parse a link or image (direct or indirect)
   larsers.Link          = larsers.DirectLink + larsers.IndirectLink
-
-  if options.link_attributes then
-    -- Support additional attributes
-    larsers.DirectImage   = parsers.exclamation
-                          * (parsers.tag / parse_inlines)
-                          * parsers.spnl
-                          * parsers.lparent
-                          * (parsers.url + Cc(""))  -- link can be empty [foo]()
-                          * parsers.optionaltitle
-                          * parsers.rparent
-                          * (parsers.attributes + Ct(""))
-                          / writer.image
-  else
-    larsers.DirectImage   = parsers.exclamation
-                          * (parsers.tag / parse_inlines)
-                          * parsers.spnl
-                          * parsers.lparent
-                          * (parsers.url + Cc(""))  -- link can be empty [foo]()
-                          * parsers.optionaltitle
-                          * parsers.rparent
-                          / writer.image
-  end
 
   larsers.IndirectImage = parsers.exclamation * parsers.tag
                         * (C(parsers.spnl) * parsers.tag)^-1 / indirect_image

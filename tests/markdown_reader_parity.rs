@@ -111,10 +111,9 @@ const SMOKE_ONLY: &[&str] = &[
     // `% Title / % Author / % Date` form; pandoc-writer emits `---` /
     // `...` YAML blocks that lunamark treats as content.
     "meta.md",
-    // Key-value attributes (`{foo="bar" baz="qq qq"}`) on headers and
-    // link_attributes on images are dropped by lunamark.
-    "header_attrs.md",
-    "figure.md",
+    // (header_attrs.md and figure.md now graduate to strict parity —
+    // kv attrs and link_attributes on DirectLink are handled since
+    // the PR 2 fork edits.)
     // `escaped_line_breaks` ext difference: lunamark emits Space,
     // pandoc emits SoftBreak on escaped newlines.
     "escapes.md",
