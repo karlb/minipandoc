@@ -171,12 +171,15 @@ local function flatten(doc, out)
   if k == "empty" then
     -- nothing
   elseif k == "lit" then
-    -- Split on embedded newlines so cr tokens are emitted for them.
+    -- Split on embedded newlines. Use `nl` (unconditional) rather than
+    -- `cr` (conditional) so a blank line inside the literal survives —
+    -- two consecutive newlines produce `txt nl nl txt` rather than being
+    -- collapsed to a single break. Code-block text relies on this.
     local text = doc.text
     if text == "" then return end
     local first = true
     for line in (text .. "\n"):gmatch("(.-)\n") do
-      if not first then out[#out+1] = { t = "cr" } end
+      if not first then out[#out+1] = { t = "nl" } end
       if #line > 0 then out[#out+1] = { t = "txt", s = line } end
       first = false
     end
@@ -349,6 +352,12 @@ function layout.render(doc, cols)
         cur = cur:gsub(" +$", "")
         push_line()
       end
+    elseif t == "nl" then
+      -- Unconditional newline: always push a line, even if empty.
+      -- Used by `lit` flattening so embedded \n\n inside a literal
+      -- (code-block body, raw-block text) is preserved verbatim.
+      cur = cur:gsub(" +$", "")
+      push_line()
     elseif t == "bl" then
       -- Blank line: if we have content on current line, push it first.
       -- Then queue a single blank (collapse consecutive blanklines).

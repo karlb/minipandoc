@@ -119,18 +119,32 @@ local function to_attr(a)
   if type(a) ~= "table" then return nil end
   if a.tag == "Attr" then return a end
   -- Keyword form: {class="foo"} or {id="x", class="y z"}.
-  -- lunamark's `parsers.attributes` produces this shape and also folds
-  -- `key=value` pairs into the same table, so anything that isn't the
-  -- special `id`/`class` keys is an attribute for pandoc's kvs slot.
+  -- lunamark's `parsers.attributes` produces this shape and also carries
+  -- each `key=value` pair as an ordered {k,v} entry in the array part
+  -- so the pandoc AST records them in source order. Walk the array
+  -- first; fall back to `pairs()` if a caller built the table by hand
+  -- (e.g. fenced-code-block auto-class construction).
   if a.class or a.id then
     local classes = {}
     if a.class then
       for tok in tostring(a.class):gmatch("%S+") do classes[#classes + 1] = tok end
     end
     local kvs = {}
-    for k, v in pairs(a) do
-      if k ~= "id" and k ~= "class" and type(k) == "string" then
-        kvs[#kvs + 1] = { k, tostring(v) }
+    local seen = {}
+    for _, pair in ipairs(a) do
+      if type(pair) == "table" and pair[1] then
+        local k = tostring(pair[1])
+        if not seen[k] and k ~= "id" and k ~= "class" then
+          seen[k] = true
+          kvs[#kvs + 1] = { k, tostring(pair[2] or "") }
+        end
+      end
+    end
+    if #kvs == 0 then
+      for k, v in pairs(a) do
+        if k ~= "id" and k ~= "class" and type(k) == "string" then
+          kvs[#kvs + 1] = { k, tostring(v) }
+        end
       end
     end
     return pandoc.Attr(a.id or "", classes, kvs)
@@ -252,7 +266,13 @@ local function make_writer(auto_ids)
   w.superscript = function(x) return pandoc.Superscript(collect_inlines(x)) end
   w.singlequoted = function(x) return pandoc.Quoted("SingleQuote", collect_inlines(x)) end
   w.doublequoted = function(x) return pandoc.Quoted("DoubleQuote", collect_inlines(x)) end
-  w.code        = function(text, attr) return pandoc.Code(text, to_attr(attr)) end
+  w.code        = function(text, attr)
+    -- Normalize code-span content to match pandoc's reader: collapse
+    -- embedded newlines to spaces, strip surrounding whitespace. Matches
+    -- pandoc 3.9 on `\`foo\``, `\` foo \``, and multi-line `\`\`foo\n\`\``.
+    text = text:gsub("\n", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    return pandoc.Code(text, to_attr(attr))
+  end
   w.link        = function(inlines, url, title, attr)
     return pandoc.Link(collect_inlines(inlines), url, title or "", to_attr(attr))
   end

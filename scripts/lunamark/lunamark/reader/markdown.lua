@@ -168,11 +168,17 @@ parsers.attrvalue   = (parsers.dquote
 -- Pandoc allows attribute blocks to wrap across lines (`{#id\n.class
 -- key=v}`), so internal separators use `parsers.spnl` (which tolerates
 -- a single optional newline) rather than `parsers.optionalspace`.
-parsers.attrpair    = Cg(C(parsers.attrid)
+--
+-- `attrpair` captures each key/value as a 2-element table; `attrlist`
+-- collects those in source order. A `rawset`-folded hash loses order,
+-- and downstream `pairs()` iteration is unspecified — which made AST
+-- output for `key=val` attributes non-deterministic (header_attrs.md
+-- parity flaked ~1 run in 5). Carrying the ordered list is the fix.
+parsers.attrpair    = Ct(C(parsers.attrid)
                       * parsers.spnl * parsers.equal * parsers.spnl
                       * parsers.attrvalue)
                       * parsers.spnl^-1
-parsers.attrlist    = Cf(Ct("") * parsers.attrpair^0, rawset)
+parsers.attrlist    = Ct(parsers.attrpair^0)
 
 parsers.class       = (P("-") * Cc("unnumbered")) + (parsers.period * C((parsers.attrid)^1))
 parsers.classes     = (parsers.class * parsers.spnl)^0
@@ -181,11 +187,17 @@ parsers.hashid      = parsers.hash * C((parsers.alphanumeric + S("-_:."))^1)
 
 parsers.attributes  = P("{") * parsers.spnl
                       * Cg(parsers.hashid^-1) * parsers.spnl
-                      * Ct(parsers.classes) * Cg(parsers.attrlist)
+                      * Ct(parsers.classes) * parsers.attrlist
                       * parsers.spnl * P("}")
-                      / function (hashid, classes, attr)
+                      / function (hashid, classes, kvs)
+                          -- Return shape carries the ordered kv list in
+                          -- positional slots and also mirrors each pair
+                          -- as a named field for callers that still do
+                          -- `attr.foo` access (rawattributes etc).
+                          local attr = kvs or {}
                           attr.id = hashid ~= "" and hashid or nil
                           attr.class = table.concat(classes or {}, " ")
+                          for _, p in ipairs(attr) do attr[p[1]] = p[2] end
                           return attr
                         end
 -- Raw attributes similar to Pandoc (=format key=value key2="value 2")

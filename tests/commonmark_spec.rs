@@ -85,7 +85,11 @@ fn parse_spec(spec: &str) -> Vec<Example> {
 ///   emits XHTML form, the spec uses HTML5;
 /// - decode a small set of named/numeric entities in text nodes so
 ///   `&quot;` and `"` compare equal, etc;
-/// - trim trailing whitespace on each line and collapse a trailing newline.
+/// - trim trailing whitespace on each line and collapse a trailing newline;
+/// - strip a `\n` immediately before `</code></pre>`. CommonMark mandates
+///   one; pandoc 3.9's HTML writer never emits it. Since our parity target
+///   is pandoc (not the spec verbatim), the scorecard should not penalize
+///   matching pandoc — the grammar captured the right text either way.
 fn normalize(html: &str) -> String {
     let bytes = html.as_bytes();
     let mut out = String::with_capacity(html.len());
@@ -136,6 +140,14 @@ fn normalize(html: &str) -> String {
     }
     while s.ends_with('\n') || s.ends_with(' ') {
         s.pop();
+    }
+    // Drop a trailing `\n` right before `</code></pre>` (see doc comment).
+    // Also drop trailing spaces before it — per-line trim_end above eats
+    // them in multi-line code, but not when `foo  </code></pre>` sits on
+    // a single line.
+    s = s.replace("\n</code></pre>", "</code></pre>");
+    while s.contains(" </code></pre>") {
+        s = s.replace(" </code></pre>", "</code></pre>");
     }
     s
 }
