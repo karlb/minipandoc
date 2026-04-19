@@ -122,21 +122,24 @@ Concretely: close the block-level gaps that actually bite downstream
 users, verify via `tests/commonmark_spec.rs` per-section deltas.
 Ordered by cost vs pitch leverage:
 
-1. **ATX headings** — require a space/tab after the opening hashes
-   (fixes `#5 bolt` misparsing) and tolerate up to 3 leading spaces.
-   Both are ~1-line edits to `HeadingStart` / `AtxHeader`.
-2. **`link_attributes` on `DirectLink`** — lunamark currently only
-   applies `{…}` attrs to `DirectImage`. Copy-paste from the Image
-   branch; graduates `figure.md` from SMOKE_ONLY and fixes the image
-   attr hole in `header_attrs.md`.
-3. **Two-pass note / reference resolution** — pre-scan blocks to
-   register `[^id]: …` and `[id]: …` definitions before running
-   inlines, so `[^1]` works when the def comes after the use.
-   Graduates `footnote.md`.
-4. **Nested lists** — lunamark's `parsers.bullet` treats 0/1/2/3
-   leading spaces equally, so `  - nested` becomes a sibling. Track
-   the list's starting indent and require subsequent markers to
-   match. Graduates `lists.md`; biggest win for HedgeDoc.
+1. **ATX headings ✓** — require space/tab after the opening hashes
+   and allow up to 3 leading spaces. Landed (commit
+   [`4bc16ec`](#)): ATX 2/18 → 12/18, Setext 1/27 → 8/27.
+2. **`link_attributes` on `DirectLink` + multi-line attr blocks ✓**
+   — copy the Image branch's trailing capture into DirectLink, and
+   let `parsers.attributes` tolerate a newline between tokens.
+   Landed (commit [`9c989e7`](#)); graduated `figure.md` and
+   `header_attrs.md` from SMOKE_ONLY.
+3. **Two-pass note / reference resolution ✓** — prescan the input
+   with `(NoteBlock + Reference + any)^0` so `register_note` /
+   `register_link` run before any inline resolution. Landed (commit
+   [`f8a9f56`](#)); graduated `footnote.md` and pushed the overall
+   scorecard 254 → 283 (biggest move so far because it unblocks
+   every forward reference-link in the spec).
+4. **Nested lists** — `parsers.bullet` treats 0/1/2/3 leading
+   spaces equally so `  - nested` becomes a sibling. Track the
+   list's starting indent and require subsequent markers to match.
+   Graduates `lists.md`; biggest win for HedgeDoc.
 5. **Indented + fenced code blocks** (today 0/12 and 1/29). Tab
    handling inside code is completely wrong; fence indent tolerance
    is off. Required for every downstream pitch.
@@ -151,14 +154,14 @@ and full HTML-block precedence are out of scope — if a pitch ever
 demands that depth we reach for cmark-gfm instead of pushing lunamark
 further.
 
-Current state (post PR 1, ATX grammar fixes): 39.0 % CommonMark
-pass rate (254 / 652). The scorecard now runs with
+Current state (through PR 3): 43.4 % CommonMark pass rate
+(283 / 652). The scorecard now runs with
 `-f markdown-auto_identifiers-smart` so pandoc-markdown extras
 don't count against grammar conformance — numbers here are not
 directly comparable to the 33.3 % recorded in
 `notes/measurements.md`, which used the default `-f markdown`.
-7 of 15 canonical fixtures pass strict AST parity with pandoc 3.9;
-8 are smoke-only pending the work above
+10 of 15 canonical fixtures pass strict AST parity with pandoc 3.9
+(was 7); 5 remain smoke-only pending the work above
 (`tests/markdown_reader_parity.rs` `SMOKE_ONLY` and "Known
 limitations" in `CLAUDE.md`). The parity scorecard
 (`tests/commonmark_spec.rs`) tracks per-section improvement as each
