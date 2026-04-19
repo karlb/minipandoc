@@ -160,8 +160,14 @@ Ordered by cost vs pitch leverage:
 6. **GFM extensions relevant to the committed pitches**: task lists,
    strikethrough, autolinks, footnotes — verify against GFM fixtures
    once 1–5 land.
-7. **TeX math** (`$…$` / `$$…$$`) — required for JupyterLite and
-   HedgeDoc. New inline/block parser in the forked grammar.
+7. **TeX math ✓** — `$…$` inline, `$$…$$` display. New inline parsers
+   added to the forked grammar; `tex_math_dollars` extension wired
+   through EXT_TO_OPT with `$` added to both specials and escapables
+   when the option is on (so `\$` produces a literal dollar). Pandoc's
+   rules on non-whitespace adjacency and "not followed by a digit"
+   after the closing `$` are encoded via a Cmt validator. Landed with
+   a dedicated `tests/fixtures/markdown/math.md` — full strict parity
+   against pandoc 3.9. Required for JupyterLite and HedgeDoc.
 
 `grid tables` remains a tactical follow-up; delimiter-run emphasis
 and full HTML-block precedence are out of scope — if a pitch ever
