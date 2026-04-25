@@ -1,0 +1,23 @@
+[ Para
+    [ Str "URL"
+    , Space
+    , Str "autolink:"
+    , Space
+    , Link
+        ( "" , [] , [] )
+        [ Str "https://example.com" ]
+        ( "https://example.com" , "" )
+    , Str "."
+    ]
+, Para
+    [ Str "Email"
+    , Space
+    , Str "autolink:"
+    , Space
+    , Link
+        ( "" , [] , [] )
+        [ Str "foo@example.com" ]
+        ( "mailto:foo@example.com" , "" )
+    , Str "."
+    ]
+]

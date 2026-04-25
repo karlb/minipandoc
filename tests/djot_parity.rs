@@ -79,12 +79,23 @@ fn run_pandoc_native(input: &str) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
+/// Fixtures whose pandoc-via-vendored-djot-reader run would crash on the
+/// upstream bug we work around in `build.rs` (Renderer:url / Renderer:email
+/// missing). Excluded from the byte/semantic parity loops; covered by
+/// dedicated golden-comparison tests below. Drop entries here once the
+/// vendored SHA is bumped past the upstream fix.
+const PARITY_SKIP: &[&str] = &["autolinks.dj"];
+
 fn fixtures() -> Vec<PathBuf> {
     let mut v: Vec<_> = std::fs::read_dir(fixtures_dir())
         .expect("read djot fixtures dir")
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("dj"))
+        .filter(|p| {
+            let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            !PARITY_SKIP.contains(&name)
+        })
         .collect();
     v.sort();
     v
@@ -141,6 +152,31 @@ fn writer_byte_parity() {
             mp_dj, pd_dj,
             "{name}: writer output differs from pandoc running the same vendored script"
         );
+    }
+}
+
+/// Autolinks (`<https://example.com>` / `<foo@example.com>`) crash the
+/// unmodified upstream `djot-reader.lua`, so the parity loops can't run
+/// pandoc against the vendored script for this fixture. Compare our
+/// reader output to a stored golden instead, normalized through
+/// `pandoc -f native -t native` when pandoc is available.
+#[test]
+fn autolinks_reader_golden() {
+    let fx = fixtures_dir().join("autolinks.dj");
+    let golden = std::fs::read_to_string(fixtures_dir().join("autolinks.native"))
+        .expect("read autolinks.native");
+    let mp_native = run_minipandoc(&["-f", "djot", "-t", "native"], Some(&fx));
+    if common::pandoc_available() {
+        assert_eq!(
+            run_pandoc_native(&mp_native),
+            run_pandoc_native(&golden),
+            "autolinks: reader output diverges from golden"
+        );
+    } else {
+        // Fall back to a whitespace-insensitive compare so the test is
+        // still meaningful when pandoc isn't on PATH.
+        let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(norm(&mp_native), norm(&golden));
     }
 }
 
