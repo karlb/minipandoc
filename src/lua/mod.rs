@@ -62,7 +62,13 @@ pub fn bootstrap(lua: &Lua, registry: &FormatRegistry) -> Result<(), mlua::Error
     })?;
     template.set("_load_builtin", load_builtin)?;
     pandoc_tbl.set("template", template)?;
-    lua.globals().set("PANDOC_VERSION", crate::PANDOC_VERSION)?;
+    // `PANDOC_VERSION` is a Version object (per pandoc's API) rather than a
+    // plain string, so writers that guard with `PANDOC_VERSION:must_be_at_least
+    // '<x.y.z>'` run unmodified.
+    let types_tbl: Table = pandoc_tbl.get("types")?;
+    let version_ctor: mlua::Function = types_tbl.get("Version")?;
+    let version: Table = version_ctor.call::<Table>(crate::PANDOC_VERSION)?;
+    lua.globals().set("PANDOC_VERSION", version)?;
     lua.globals().set("PANDOC_READER_OPTIONS", lua.create_table()?)?;
     lua.globals().set("PANDOC_WRITER_OPTIONS", lua.create_table()?)?;
     // Install pandoc.read and pandoc.write that recurse back into the registry.

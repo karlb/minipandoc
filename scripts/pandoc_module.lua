@@ -1133,6 +1133,71 @@ function pandoc._internal.escape_html_attr(s)
   return s
 end
 
+-- ---------------------------------------------------------------------------
+-- pandoc.types.Version — used by `PANDOC_VERSION` and any custom writer that
+-- guards itself with `PANDOC_VERSION:must_be_at_least '<x.y.z>'`.
+-- ---------------------------------------------------------------------------
+
+local Version = {}
+Version.__name = "Version"
+
+local function parse_version(v)
+  if type(v) == "table" then return v end
+  local out = {}
+  for n in tostring(v):gmatch("(%d+)") do
+    out[#out + 1] = tonumber(n)
+  end
+  return out
+end
+
+local function compare_versions(a, b)
+  local n = math.max(#a, #b)
+  for i = 1, n do
+    local x, y = a[i] or 0, b[i] or 0
+    if x ~= y then return x < y and -1 or 1 end
+  end
+  return 0
+end
+
+Version.__index = function(self, k)
+  if k == "must_be_at_least" then return Version.must_be_at_least end
+  return rawget(self, k)
+end
+
+Version.__tostring = function(self)
+  local parts = {}
+  for i, n in ipairs(self) do parts[i] = tostring(n) end
+  return table.concat(parts, ".")
+end
+
+Version.__lt = function(a, b)
+  return compare_versions(parse_version(a), parse_version(b)) < 0
+end
+Version.__le = function(a, b)
+  return compare_versions(parse_version(a), parse_version(b)) <= 0
+end
+Version.__eq = function(a, b)
+  return compare_versions(a, b) == 0
+end
+
+function Version.new(v)
+  return setmetatable(parse_version(v), Version)
+end
+
+function Version:must_be_at_least(other, msg)
+  local target = parse_version(other)
+  if compare_versions(self, target) < 0 then
+    error(
+      msg or ("expected version at least " .. tostring(other) ..
+              ", got " .. tostring(self)),
+      2
+    )
+  end
+end
+
+pandoc.types = pandoc.types or {}
+pandoc.types.Version = Version.new
+
 -- Expose lpeg and re under pandoc.* to match pandoc's convention for
 -- custom readers. Preloaded from the Rust bootstrap.
 local ok_lpeg, lpeg = pcall(require, "lpeg")
