@@ -31,14 +31,20 @@ impl FormatRegistry {
         if let Some(env) = std::env::var_os("MINIPANDOC_DATA_DIR") {
             dirs.push(PathBuf::from(env));
         }
-        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
-            let mut p = PathBuf::from(xdg);
-            p.push("minipandoc");
-            dirs.push(p);
-        } else if let Some(home) = std::env::var_os("HOME") {
-            let mut p = PathBuf::from(home);
-            p.push(".local/share/minipandoc");
-            dirs.push(p);
+        // Standard XDG / HOME location for minipandoc, then the same for
+        // pandoc — so a script already installed at
+        // `~/.local/share/pandoc/custom/foo.lua` is found without copying.
+        for app in ["minipandoc", "pandoc"] {
+            if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+                let mut p = PathBuf::from(xdg);
+                p.push(app);
+                dirs.push(p);
+            } else if let Some(home) = std::env::var_os("HOME") {
+                let mut p = PathBuf::from(home);
+                p.push(".local/share");
+                p.push(app);
+                dirs.push(p);
+            }
         }
         Self {
             data_dirs: Arc::new(dirs),
@@ -54,8 +60,12 @@ impl FormatRegistry {
     }
 
     pub fn load_script(&self, name: &str, kind: ScriptKind) -> Result<Script, Error> {
-        // If `name` looks like a file path, try loading it directly.
-        if name.contains('/') || name.contains('.') {
+        // Pandoc convention: a `.lua` suffix means "this is a custom script",
+        // a bare name means "match a built-in format". Custom scripts are
+        // resolved as a literal file path (CWD-relative or absolute) first,
+        // then `<data_dir>/custom/<name>.lua`. Bare names go straight to
+        // built-ins; we never look up `gemtext` (no suffix) in `custom/`.
+        if name.ends_with(".lua") {
             let as_path = PathBuf::from(name);
             if as_path.is_file() {
                 let source = std::fs::read_to_string(&as_path)
@@ -66,27 +76,22 @@ impl FormatRegistry {
                     path: Some(as_path.display().to_string()),
                 });
             }
-        }
-        // Check data dirs for user-provided scripts (override builtins).
-        let subdir = match kind {
-            ScriptKind::Reader => "readers",
-            ScriptKind::Writer => "writers",
-        };
-        for dir in self.data_dirs.iter() {
-            let mut candidate = dir.clone();
-            candidate.push(subdir);
-            candidate.push(format!("{name}.lua"));
-            if candidate.is_file() {
-                let source = std::fs::read_to_string(&candidate)
-                    .map_err(|e| Error::Io(format!("{}: {e}", candidate.display())))?;
-                return Ok(Script {
-                    name: candidate.display().to_string(),
-                    source,
-                    path: Some(candidate.display().to_string()),
-                });
+            for dir in self.data_dirs.iter() {
+                let mut candidate = dir.clone();
+                candidate.push("custom");
+                candidate.push(name);
+                if candidate.is_file() {
+                    let source = std::fs::read_to_string(&candidate)
+                        .map_err(|e| Error::Io(format!("{}: {e}", candidate.display())))?;
+                    return Ok(Script {
+                        name: candidate.display().to_string(),
+                        source,
+                        path: Some(candidate.display().to_string()),
+                    });
+                }
             }
+            return Err(Error::UnknownFormat(name.to_string()));
         }
-        // Fall back to built-in bundled scripts.
         if let Some((source, path)) = builtin_script(name, kind) {
             return Ok(Script {
                 name: path.to_string(),
@@ -114,27 +119,11 @@ impl FormatRegistry {
     }
 
     pub fn list_formats(&self, kind: ScriptKind) -> Vec<String> {
+        // Mirrors pandoc: only built-in formats are listed; custom scripts in
+        // `<data_dir>/custom/` are reachable via `-t name.lua` but not enumerated.
         let mut out = BTreeSet::new();
         for b in builtin_names(kind) {
             out.insert(b.to_string());
-        }
-        let subdir = match kind {
-            ScriptKind::Reader => "readers",
-            ScriptKind::Writer => "writers",
-        };
-        for dir in self.data_dirs.iter() {
-            let mut d = dir.clone();
-            d.push(subdir);
-            if let Ok(rd) = std::fs::read_dir(&d) {
-                for entry in rd.flatten() {
-                    let path = entry.path();
-                    if path.extension().and_then(|s| s.to_str()) == Some("lua") {
-                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            out.insert(stem.to_string());
-                        }
-                    }
-                }
-            }
         }
         out.into_iter().collect()
     }
