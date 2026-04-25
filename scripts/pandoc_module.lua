@@ -335,9 +335,54 @@ function pandoc.SoftBreak() return make("SoftBreak", {}) end
 function pandoc.LineBreak() return make("LineBreak", {}) end
 function pandoc.HorizontalRule() return make("HorizontalRule", {}) end
 
+-- Tokenize a raw string into Inline elements (matches pandoc.Inlines(string)):
+-- non-whitespace runs → Str, spaces/tabs → Space, newlines → SoftBreak.
+local function tokenize_string(out, s)
+  local i, n = 1, #s
+  while i <= n do
+    local c = s:sub(i, i)
+    if c == "\n" then
+      out[#out+1] = pandoc.SoftBreak(); i = i + 1
+    elseif c == " " or c == "\t" then
+      out[#out+1] = pandoc.Space()
+      while i <= n and (s:sub(i,i) == " " or s:sub(i,i) == "\t") do i = i + 1 end
+    else
+      local j = i
+      while j <= n do
+        local cc = s:sub(j, j)
+        if cc == " " or cc == "\t" or cc == "\n" then break end
+        j = j + 1
+      end
+      out[#out+1] = pandoc.Str(s:sub(i, j - 1))
+      i = j
+    end
+  end
+end
+
+-- Coerce content into an Inlines list, tokenizing raw string entries.
+-- The vendored djot reader emits smart-punctuation tokens (curly quotes,
+-- en/em-dash, ellipses) as raw Lua strings; without this, html.lua's
+-- writer would silently drop them.
+local function coerce_inlines(content)
+  if content == nil then return List.new({}) end
+  if type(content) == "string" then
+    local out = {}; tokenize_string(out, content)
+    return List.new(out)
+  end
+  local out = {}
+  for _, v in ipairs(content) do
+    if type(v) == "string" then
+      tokenize_string(out, v)
+    else
+      out[#out+1] = v
+    end
+  end
+  return List.new(out)
+end
+
 local function wrap_content(tag)
   return function(content)
-    return make(tag, { content = List.new(content or {}) })
+    return make(tag, { content = coerce_inlines(content) })
   end
 end
 
@@ -350,7 +395,7 @@ pandoc.Subscript = wrap_content("Subscript")
 pandoc.SmallCaps = wrap_content("SmallCaps")
 
 function pandoc.Quoted(qt, content)
-  return make("Quoted", { quotetype = qt, content = List.new(content or {}) })
+  return make("Quoted", { quotetype = qt, content = coerce_inlines(content) })
 end
 
 function pandoc.SingleQuoted(content) return pandoc.Quoted("SingleQuote", content) end
@@ -359,7 +404,7 @@ function pandoc.DoubleQuoted(content) return pandoc.Quoted("DoubleQuote", conten
 function pandoc.Cite(cites, content)
   return make("Cite", {
     citations = List.new(cites or {}),
-    content = List.new(content or {}),
+    content = coerce_inlines(content),
   })
 end
 
@@ -383,7 +428,7 @@ end
 
 function pandoc.Link(content, target, title, attr)
   return make("Link", {
-    content = List.new(content or {}),
+    content = coerce_inlines(content),
     target = target or "",
     title = title or "",
     attr = to_attr(attr),
@@ -392,7 +437,7 @@ end
 
 function pandoc.Image(caption, src, title, attr)
   return make("Image", {
-    caption = List.new(caption or {}),
+    caption = coerce_inlines(caption),
     src = src or "",
     title = title or "",
     attr = to_attr(attr),
@@ -405,7 +450,7 @@ end
 
 function pandoc.Span(content, attr)
   return make("Span", {
-    content = List.new(content or {}),
+    content = coerce_inlines(content),
     attr = to_attr(attr),
   })
 end
@@ -482,7 +527,7 @@ end
 function pandoc.Header(level, content, attr)
   return make("Header", {
     level = level or 1,
-    content = List.new(content or {}),
+    content = coerce_inlines(content),
     attr = to_attr(attr),
   })
 end
