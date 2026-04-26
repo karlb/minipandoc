@@ -81,11 +81,16 @@ minipandoc -f html -t markdown -L cleanup.lua page.html
 
 ## Browser / WASM
 
-`cargo build --target wasm32-wasip1 --release` produces a WASI
-artifact that runs unchanged in the browser via the vendored
-`@bjorn3/browser_wasi_shim`. `web/minipandoc.mjs` is the ES-module
-loader; `web/index.html` is a demo. Pandoc Lua filters work
-unmodified there too — the browser path is the same Lua-5.4 binary.
+`scripts/build-wasm.sh` produces a WASI artifact that runs unchanged
+in the browser via the vendored `@bjorn3/browser_wasi_shim`. The
+script auto-downloads a pinned wasi-sdk into `~/.cache/` on first
+run (LPeg is C, so a wasm-targeted clang + sysroot is required);
+if you already have wasi-sdk wired up via `CC_wasm32_wasip1` /
+`AR_wasm32_wasip1` / `CFLAGS_wasm32_wasip1` / `RUSTFLAGS`, plain
+`cargo build --target wasm32-wasip1 --release` works too.
+`web/minipandoc.mjs` is the ES-module loader; `web/index.html` is
+a demo. Pandoc Lua filters work unmodified there too — the browser
+path is the same Lua-5.4 binary.
 
 ## Architecture
 
@@ -113,9 +118,15 @@ converts to `src/ast.rs` types in the pipeline. A fresh Lua state is
 created per conversion. `pandoc.read` / `pandoc.write` recurse via
 sub-states.
 
-Adding a new format means writing Lua under `scripts/readers/` or
-`scripts/writers/` (or vendoring an upstream pandoc-API script under
-`scripts/vendor/`) and registering it in `src/format.rs`. See
+Formats can also be supplied on the CLI without registering them,
+matching pandoc's custom-reader/writer convention: `-f ./gemtext.lua`
+(literal path) or `-f gemtext.lua` (resolved against
+`<data_dir>/custom/`, including `~/.local/share/pandoc/custom/`).
+A bare name like `-f gemtext` only resolves built-ins.
+
+Adding a *built-in* format means writing Lua under `scripts/readers/`
+or `scripts/writers/` (or vendoring an upstream pandoc-API script
+under `scripts/vendor/`) and registering it in `src/format.rs`. See
 `CLAUDE.md` for the full procedure and conventions.
 
 ## License
