@@ -13,6 +13,15 @@ path = "src/lib.rs"
 name = "minipandoc"
 path = "src/main.rs"
 
+[features]
+default = ["bundled-formats"]
+# Bundle every format reader/writer and template into the binary via
+# include_str!. Disable for a slimmer core that loads scripts only from
+# `<data_dir>/custom/` or explicit `.lua` paths. The Lua runtime
+# (pandoc_module, layout, template, re, LPeg) is always bundled — only
+# the format-specific scripts are gated.
+bundled-formats = []
+
 [dependencies]
 mlua = { version = "0.11", features = ["lua54", "vendored"] }
 clap = { version = "4", features = ["derive"] }

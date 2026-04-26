@@ -41,6 +41,14 @@ fn main() {
         .warnings(false)
         .compile("lpeg");
 
+    // The amalgamated bundles below are only consumed by `src/format.rs`
+    // when the `bundled-formats` feature is on (it gates the matching
+    // `include_str!`s). Skip the work when the feature is off so a
+    // `--no-default-features` build doesn't pay for output it discards.
+    if env::var_os("CARGO_FEATURE_BUNDLED_FORMATS").is_none() {
+        return;
+    }
+
     // --- Djot ---------------------------------------------------------------
     let djot_modules: Vec<(&str, PathBuf)> = [
         ("djot", "djot.lua"),

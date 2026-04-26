@@ -161,25 +161,47 @@ pub fn parse_extensions(s: &str) -> (String, BTreeMap<String, bool>) {
 
 // ---------------------------------------------------------------------------
 // Built-in (bundled) format scripts
+//
+// All format-specific scripts and templates are gated behind the
+// `bundled-formats` Cargo feature (on by default). With the feature
+// off, the binary ships without any format scripts; users must point
+// `--from`/`--to` at a `.lua` file or install scripts under
+// `<data_dir>/custom/`.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "bundled-formats")]
 const NATIVE_READER: &str = include_str!("../scripts/readers/native.lua");
+#[cfg(feature = "bundled-formats")]
 const NATIVE_WRITER: &str = include_str!("../scripts/writers/native.lua");
+#[cfg(feature = "bundled-formats")]
 const DJOT_READER: &str = include_str!(concat!(env!("OUT_DIR"), "/djot_reader.lua"));
+#[cfg(feature = "bundled-formats")]
 const DJOT_WRITER: &str = include_str!(concat!(env!("OUT_DIR"), "/djot_writer.lua"));
+#[cfg(feature = "bundled-formats")]
 const HTML_READER: &str = include_str!("../scripts/readers/html.lua");
+#[cfg(feature = "bundled-formats")]
 const HTML_WRITER: &str = include_str!("../scripts/writers/html.lua");
+#[cfg(feature = "bundled-formats")]
 const MARKDOWN_READER: &str = include_str!(concat!(env!("OUT_DIR"), "/markdown_reader.lua"));
+#[cfg(feature = "bundled-formats")]
 const PLAIN_WRITER: &str = include_str!("../scripts/writers/plain.lua");
+#[cfg(feature = "bundled-formats")]
 const MARKDOWN_WRITER: &str = include_str!("../scripts/writers/markdown.lua");
+#[cfg(feature = "bundled-formats")]
 const EPUB_WRITER: &str = include_str!("../scripts/writers/epub.lua");
+#[cfg(feature = "bundled-formats")]
 const LATEX_WRITER: &str = include_str!("../scripts/writers/latex.lua");
 
+#[cfg(feature = "bundled-formats")]
 const DEFAULT_HTML_TEMPLATE: &str = include_str!("../scripts/templates/default.html");
+#[cfg(feature = "bundled-formats")]
 const DEFAULT_PLAIN_TEMPLATE: &str = include_str!("../scripts/templates/default.plain");
+#[cfg(feature = "bundled-formats")]
 const DEFAULT_MARKDOWN_TEMPLATE: &str = include_str!("../scripts/templates/default.markdown");
+#[cfg(feature = "bundled-formats")]
 const DEFAULT_LATEX_TEMPLATE: &str = include_str!("../scripts/templates/default.latex");
 
+#[cfg(feature = "bundled-formats")]
 fn builtin_template(name: &str) -> Option<&'static str> {
     match name {
         "default.html" => Some(DEFAULT_HTML_TEMPLATE),
@@ -190,6 +212,12 @@ fn builtin_template(name: &str) -> Option<&'static str> {
     }
 }
 
+#[cfg(not(feature = "bundled-formats"))]
+fn builtin_template(_name: &str) -> Option<&'static str> {
+    None
+}
+
+#[cfg(feature = "bundled-formats")]
 fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'static str)> {
     match (name, kind) {
         ("native", ScriptKind::Reader) => Some((NATIVE_READER, "<builtin:readers/native.lua>")),
@@ -211,11 +239,22 @@ fn builtin_script(name: &str, kind: ScriptKind) -> Option<(&'static str, &'stati
     }
 }
 
+#[cfg(not(feature = "bundled-formats"))]
+fn builtin_script(_name: &str, _kind: ScriptKind) -> Option<(&'static str, &'static str)> {
+    None
+}
+
+#[cfg(feature = "bundled-formats")]
 fn builtin_names(kind: ScriptKind) -> &'static [&'static str] {
     match kind {
         ScriptKind::Reader => &["djot", "html", "markdown", "native"],
         ScriptKind::Writer => &["djot", "epub", "html", "latex", "markdown", "native", "plain"],
     }
+}
+
+#[cfg(not(feature = "bundled-formats"))]
+fn builtin_names(_kind: ScriptKind) -> &'static [&'static str] {
+    &[]
 }
 
 #[cfg(test)]

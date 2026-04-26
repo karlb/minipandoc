@@ -60,6 +60,24 @@ cargo test                                  # full suite
 Integration tests that compare against real pandoc skip gracefully
 when `pandoc` is not on `PATH`.
 
+### Slim build (no bundled formats)
+
+The `bundled-formats` Cargo feature (on by default) embeds every
+format reader/writer and template into the binary. Disable it for a
+smaller core that loads format scripts only from `<data_dir>/custom/`
+or explicit `.lua` paths:
+
+```sh
+cargo build --release --no-default-features
+```
+
+This trims roughly 600 KB. The Lua runtime (`pandoc.*` API, layout,
+template, LPeg) stays bundled — only format-specific scripts and the
+default templates drop out. With the feature off,
+`--list-input-formats` returns an empty list and bare names like
+`-f djot` fail with `unknown format`; pass `-f path/to/djot.lua` or
+install the script under `<data_dir>/custom/djot.lua` instead.
+
 ## Usage
 
 The CLI mirrors pandoc's flag surface where it overlaps:
