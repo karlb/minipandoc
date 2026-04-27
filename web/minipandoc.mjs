@@ -50,12 +50,18 @@ function loadModule() {
  *
  * @param {string} input      - source document text
  * @param {string} from       - input format (e.g. "djot", "native")
- * @param {string} to         - output format (e.g. "html", "markdown", "latex")
+ * @param {string} to         - output format (e.g. "html", "markdown", "latex", "epub")
  * @param {object} [options]
  * @param {boolean} [options.standalone=false] - pass -s for full document output
- * @returns {Promise<string>} converted document
+ * @param {boolean} [options.binary=false] - return raw bytes (Uint8Array) instead of a UTF-8 string; required for binary writers like epub
+ * @returns {Promise<string|Uint8Array>} converted document
  */
-export async function convert(input, from, to, { standalone = false } = {}) {
+export async function convert(
+  input,
+  from,
+  to,
+  { standalone = false, binary = false } = {},
+) {
   const wasmModule = await loadModule();
 
   const inputBytes = new TextEncoder().encode(input);
@@ -66,11 +72,14 @@ export async function convert(input, from, to, { standalone = false } = {}) {
     ["doc", new File(inputBytes, { readonly: true })],
   ]);
 
-  const stdoutChunks = [];
+  // Capture stdout into an in-memory File so binary writers (epub) survive
+  // intact. ConsoleStdout.lineBuffered would decode UTF-8 and split on
+  // newlines, which corrupts ZIP bytes.
+  const stdoutFile = new File([]);
   const stderrChunks = [];
   const fds = [
     new OpenFile(new File([])),
-    ConsoleStdout.lineBuffered((line) => stdoutChunks.push(line)),
+    new OpenFile(stdoutFile),
     ConsoleStdout.lineBuffered((line) => stderrChunks.push(line)),
     preopen,
   ];
@@ -93,7 +102,6 @@ export async function convert(input, from, to, { standalone = false } = {}) {
     const msg = stderrChunks.join("\n") || `minipandoc exited with code ${code}`;
     throw new Error(msg);
   }
-  // The binary's writers always terminate in a single \n, which the line
-  // buffer has already consumed; rejoin and restore it.
-  return stdoutChunks.join("\n") + (stdoutChunks.length ? "\n" : "");
+  const bytes = stdoutFile.data;
+  return binary ? bytes : new TextDecoder("utf-8").decode(bytes);
 }

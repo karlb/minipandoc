@@ -42,6 +42,8 @@
       <label>From
         <select id="from">
           <option value="djot" selected>djot</option>
+          <option value="html">html</option>
+          <option value="markdown">markdown</option>
           <option value="native">native</option>
         </select>
       </label>
@@ -49,6 +51,7 @@
         <select id="to">
           <option value="html" selected>html</option>
           <option value="djot">djot</option>
+          <option value="epub">epub</option>
           <option value="latex">latex</option>
           <option value="markdown">markdown</option>
           <option value="native">native</option>
@@ -59,7 +62,7 @@
       <button id="convert">Convert</button>
     </div>
     <p class="note">
-      Readers: djot, native. Writers: djot, html, latex, markdown, native, plain.
+      Readers: djot, html, markdown, native. Writers: djot, epub, html, latex, markdown, native, plain. Choosing <code>epub</code> downloads a <code>.epub</code> file.
     </p>
 
     <textarea id="input"># Hello
@@ -79,18 +82,39 @@ A paragraph with _emph_ and *strong* and [link](https://x.org) and `code`.
     <script type="module">
       import { convert } from "./minipandoc.mjs";
       const $ = (id) => document.getElementById(id);
+      const BINARY_WRITERS = { epub: "application/epub+zip" };
+
+      function downloadBytes(bytes, filename, mime) {
+        const blob = new Blob([bytes], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
       $("convert").addEventListener("click", async () => {
         const out = $("output");
         out.classList.remove("error");
         out.textContent = "converting…";
         try {
+          const to = $("to").value;
+          const mime = BINARY_WRITERS[to];
           const result = await convert(
             $("input").value,
             $("from").value,
-            $("to").value,
-            { standalone: $("standalone").checked },
+            to,
+            { standalone: $("standalone").checked, binary: !!mime },
           );
-          out.textContent = result;
+          if (mime) {
+            downloadBytes(result, `document.${to}`, mime);
+            out.textContent = `Downloaded document.${to} (${result.length} bytes).`;
+          } else {
+            out.textContent = result;
+          }
         } catch (err) {
           out.classList.add("error");
           out.textContent = String(err?.message ?? err);
