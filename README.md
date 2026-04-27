@@ -99,6 +99,8 @@ minipandoc -f html -t markdown -L cleanup.lua page.html
 
 ## Browser / WASM
 
+Live demo: <https://karlb.github.io/minipandoc/>.
+
 `scripts/build-wasm.sh` produces a WASI artifact that runs unchanged
 in the browser via the vendored `@bjorn3/browser_wasi_shim`. The
 script auto-downloads a pinned wasi-sdk into `~/.cache/` on first

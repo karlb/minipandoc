@@ -1,0 +1,68 @@
+name: Deploy web demo to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache wasi-sdk
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/minipandoc
+          key: wasi-sdk-26-${{ runner.os }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-wasm-${{ runner.os }}-
+
+      - name: Build WASM
+        run: scripts/build-wasm.sh release
+
+      - name: Stage site
+        run: |
+          mkdir -p _site/web _site/scripts/vendor _site/target/wasm32-wasip1/release
+          cp web/index.html web/minipandoc.mjs _site/web/
+          cp -r scripts/vendor/browser_wasi_shim _site/scripts/vendor/
+          cp target/wasm32-wasip1/release/minipandoc.wasm _site/target/wasm32-wasip1/release/
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=web/">
+          <title>minipandoc</title>
+          <a href="web/">minipandoc browser demo</a>
+          HTML
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
